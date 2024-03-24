@@ -1,0 +1,2 @@
+*.test binary filter=git_fastcdc
+/.cdc/** binary filter=git_fastcdc

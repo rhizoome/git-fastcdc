@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "git-fastcdc"
+version = "0.1.0"
+description = "FastCDC for large git files"
+authors = ["Jean-Louis Fuchs <jean-louis.fuchs@adfinis.com>"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+
+[tool.poetry.scripts]
+git-fastcdc = 'git_fastcdc:cli'
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastcdc = "^1.5.0"
+click = "^8.1.7"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.1.1"
+mypy = "^1.9.0"
+pdbpp = "^0.10.3"
+ruff = "^0.3.4"
+
+
+[tool.poetry.group.lsp.dependencies]
+python-lsp-server = "^1.10.1"
+python-lsp-ruff = "^2.2.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
