@@ -9,8 +9,7 @@ read = sys.stdin.buffer.read
 buffer = sys.stdout.buffer
 write = buffer.write
 flush = buffer.flush
-tmpfile1 = Path(".fast_cdc_tmp_file_29310b6")
-tmpfile2 = Path(".fast_cdc_tmp_file_0c2a0b9")
+tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcdir = Path(".cdc")
 cdcline = "/.cdc/** binary filter=git_fastcdc"
 
@@ -56,13 +55,17 @@ def flush_pkt():
     flush()
 
 
-def git_hash_blob(file):
-    return run(
-        ["git", "hash-object", "-w", "-t", "blob", file],
-        check=True,
-        stdout=PIPE,
-        encoding="UTF-8",
-    ).stdout.strip()
+def git_hash_blob(data):
+    return (
+        run(
+            ["git", "hash-object", "-w", "-t", "blob", "--stdin"],
+            check=True,
+            stdout=PIPE,
+            input=data,
+        )
+        .stdout.strip()
+        .decode()
+    )
 
 
 def git_get_blob(hash):
@@ -88,25 +91,24 @@ def chunk_string(input_string, chunk_size=65516):
 
 def clean(pathname):
     try:
-        with tmpfile1.open("wb") as f:
+        with tmpfile.open("wb") as f:
             while pkg := read_pkt_line():
                 f.write(pkg)
+        avg_size = int(max(256 * 1024, tmpfile.stat().st_size / 32))
         write_pkt_line_str("status=success\n")
         flush_pkt()
-        with tmpfile1.open("rb") as f:
-            for cdc in fastcdc(str(tmpfile1), avg_size=256 * 1024):
+        with tmpfile.open("rb") as f:
+            for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
                 f.seek(cdc.offset)
-                with tmpfile2.open("wb") as w:
-                    w.write(f.read(cdc.length))
-                path = hash_dir(cdcdir, git_hash_blob(tmpfile2))
-                with tmpfile2.open("w") as w:
+                data = f.read(cdc.length)
+                path = hash_dir(cdcdir, git_hash_blob(data))
+                with path.open("w") as w:
                     w.write(path.name)
-                tmpfile2.rename(path)
                 write_pkt_line_str(f"{path.name}\n")
         flush_pkt()
         flush_pkt()
     finally:
-        tmpfile1.unlink()
+        tmpfile.unlink()
 
 
 def smudge_cdc(pathname, blob):
