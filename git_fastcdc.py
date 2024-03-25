@@ -15,7 +15,9 @@ write = buffer.write
 flush = buffer.flush
 tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcdir = Path(".cdc")
+cdcmatch = ".cdc/**/*.cdc"
 cdcline = "/.cdc/**/*.cdc binary filter=git_fastcdc"
+cdcattr = "/.gitattributes text -binary -filter"
 avg_min = 128 * 1024
 
 
@@ -83,6 +85,15 @@ def git_toplevel():
         .stdout.decode()
         .strip()
     )
+
+
+def git_ls_files():
+    return run(
+        ["git", "ls-files"],
+        check=True,
+        encoding="UTF-8",
+        stdout=PIPE,
+    ).stdout
 
 
 def git_get_blob(hash):
@@ -315,7 +326,7 @@ def read_blobs(entry, blobs):
 
 
 def prune_blobs(blobs):
-    for file in Path(".").glob(".cdc/**/*.cdc"):
+    for file in Path(".").glob(cdcmatch):
         if file.name not in blobs:
             file.unlink()
 
@@ -324,7 +335,12 @@ def prune_blobs(blobs):
 def prune():
     """Prune fastcdc objects."""
     file = Path(".gitattributes")
-    file_list = os.listdir(".")
+    file_list = []
+    for entry in git_ls_files().splitlines():
+        entry = entry.strip()
+        if not (fnmatch(entry, cdcmatch) and ".gitattributes" in entry):
+            file_list.append(entry)
+    eprint(file_list)
     blobs = set()
     if file.exists():
         with file.open("r", encoding="UTF-8") as f:
@@ -374,6 +390,7 @@ def install():
         if data:
             f.write(f"{data}\n")
         f.write(f"{cdcline}\n")
+        f.write(f"{cdcattr}\n")
 
 
 def do_remove():
@@ -401,7 +418,7 @@ def do_remove():
         data = f.read()
     with file.open("w", encoding="UTF-8") as f:
         for line in data.splitlines():
-            if cdcline not in line:
+            if cdcline not in line and cdcattr not in line:
                 f.write(f"{line}\n")
 
 
