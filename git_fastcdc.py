@@ -323,9 +323,8 @@ def process():
     write_pkt_line_str("capability=clean")
     write_pkt_line_str("capability=smudge")
     flush_pkt()
-    new = False
-    cdcs, base_hints = read_cdcs()
-    old_cdcs = set(cdcs)
+    cdcs = set()
+    base_hints = {}
     while line := read_pkt_line_str():
         key, _, command = line.partition("=")
         assert key == "command"
@@ -338,13 +337,12 @@ def process():
             # key, _, value = line.partition("=")
         if command == "clean":
             if ondisk():
-                new = clean_ondisk(pathname, cdcs, base_hints) or new
+                clean_ondisk(pathname, cdcs, base_hints) or new
             else:
-                new = clean(pathname, cdcs, base_hints) or new
+                clean(pathname, cdcs, base_hints) or new
         elif command == "smudge":
             smudge(pathname)
-    if old_cdcs != cdcs:
-        write_cdcs(cdcs - old_cdcs, base_hints)
+    write_cdcs(cdcs, base_hints)
 
 
 def read_blobs(entry, cdcs):
