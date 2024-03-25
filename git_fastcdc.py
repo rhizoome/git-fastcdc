@@ -174,9 +174,9 @@ def chunk_string(input_string, chunk_size=65516):
 
 
 def get_avg_size(size):
-    box = int(size / 32)
+    box = int(size / 16)
     bits = box.bit_length()
-    shift = max(bits - 5, 0)
+    shift = max(bits - 4, 0)
     return (box >> shift) << shift
 
 
