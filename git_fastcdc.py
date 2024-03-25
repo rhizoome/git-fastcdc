@@ -44,7 +44,7 @@ def read_pkt_line():
 
 
 def read_pkt_line_str():
-    return read_pkt_line().decode().strip()
+    return read_pkt_line().decode(encoding="UTF-8").strip()
 
 
 def write_pkt_line(data):
@@ -71,7 +71,7 @@ def git_hash_blob(data):
             input=data,
         )
         .stdout.strip()
-        .decode()
+        .decode(encoding="UTF-8")
     )
 
 
@@ -82,7 +82,7 @@ def git_toplevel():
             check=True,
             stdout=PIPE,
         )
-        .stdout.decode()
+        .stdout.decode(encoding="UTF-8")
         .strip()
     )
 
@@ -119,8 +119,8 @@ def git_show(id):
     ).stdout
 
 
-def git_add_cdc():
-    run(["git", "add", ".cdc"], check=True)
+def git_add(*args):
+    run(["git", "add"] + list(args), check=True)
 
 
 def hash_dir(base, hash):
@@ -159,7 +159,7 @@ def clean(pathname):
         path = hash_dir(cdcdir, hash).with_suffix(".cdc")
         with path.open("w") as w:
             w.write(hash)
-        write_pkt_line_str(f"{hash}\n")
+        write_pkt_line_str(f"{path.name}\n")
     flush_pkt()
     flush_pkt()
 
@@ -213,14 +213,15 @@ def clean_cdc(pathname):
 
 def smudge(pathname, blob):
     lines = []
-    while pkg := read_pkt_line():
+    while pkg := read_pkt_line_str():
         lines.extend(pkg.splitlines())
     write_pkt_line_str("status=success\n")
     flush_pkt()
     for line in lines:
         line = line.strip()
+        hash = Path(line).stem
         if line:
-            blob = git_get_blob(line)
+            blob = git_get_blob(hash)
             for chunk in chunk_string(blob):
                 write_pkt_line(chunk)
     flush_pkt()
@@ -320,7 +321,8 @@ def remove_empty_dirs(path):
 
 
 def read_blobs(entry, blobs):
-    for blob in git_show(f"HEAD:{entry}").decode().splitlines():
+    git_add(entry)
+    for blob in git_show(f":{entry}").decode(encoding="UTF-8").splitlines():
         if fnmatch(blob, "*.cdc"):
             blobs.add(blob)
 
@@ -338,9 +340,8 @@ def prune():
     file_list = []
     for entry in git_ls_files().splitlines():
         entry = entry.strip()
-        if not (fnmatch(entry, cdcmatch) and ".gitattributes" in entry):
+        if not (fnmatch(entry, cdcmatch) or ".gitattributes" in entry):
             file_list.append(entry)
-    eprint(file_list)
     blobs = set()
     if file.exists():
         with file.open("r", encoding="UTF-8") as f:
@@ -354,7 +355,7 @@ def prune():
     cdc = Path(".cdc")
     if cdc.exists():
         remove_empty_dirs(cdc)
-        git_add_cdc()
+        git_add(cdc)
 
 
 @cli.command()
