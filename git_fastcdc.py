@@ -226,29 +226,6 @@ def clean(pathname, cdcs):
 #         tmpfile.unlink()
 
 
-def smudge_cdc(pathname, blob):
-    while read_pkt_line():
-        pass
-    write_pkt_line_str("status=success\n")
-    flush_pkt()
-    assert pathname.stem == blob
-    write_pkt_line_str(blob)
-    flush_pkt()
-    flush_pkt()
-
-
-def clean_cdc(pathname):
-    hash = read_pkt_line_str()
-    assert read_pkt_line_str() == ""
-    write_pkt_line_str("status=success\n")
-    flush_pkt()
-    blob = git_get_blob(hash)
-    for chunk in chunk_string(blob):
-        write_pkt_line(chunk)
-    flush_pkt()
-    flush_pkt()
-
-
 def smudge(pathname, blob):
     lines = []
     while pkg := read_pkt_line_str():
@@ -262,19 +239,6 @@ def smudge(pathname, blob):
             blob = git_get_blob(hash)
             for chunk in chunk_string(blob):
                 write_pkt_line(chunk)
-    flush_pkt()
-    flush_pkt()
-
-
-def cat():
-    pkgs = []
-    append = pkgs.append
-    while pkg := read_pkt_line():
-        append(pkg)
-    write_pkt_line_str("status=success\n")
-    flush_pkt()
-    for pkg in pkgs:
-        write_pkt_line(pkg)
     flush_pkt()
     flush_pkt()
 
