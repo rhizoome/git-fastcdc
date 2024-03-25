@@ -2,6 +2,7 @@ import os
 import shlex
 import sys
 from fnmatch import fnmatch
+from io import BytesIO
 from pathlib import Path
 from subprocess import PIPE, run
 
@@ -125,27 +126,24 @@ def get_avg_size(size):
 
 
 def clean(pathname):
-    try:
-        with tmpfile.open("wb") as f:
-            while pkg := read_pkt_line():
-                f.write(pkg)
-        size = tmpfile.stat().st_size
-        avg_size = max(avg_min, get_avg_size(size))
-        write_pkt_line_str("status=success\n")
-        flush_pkt()
-        with tmpfile.open("rb") as f:
-            for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
-                f.seek(cdc.offset)
-                data = f.read(cdc.length)
-                hash = git_hash_blob(data)
-                path = hash_dir(cdcdir, hash).with_suffix(".cdc")
-                with path.open("w") as w:
-                    w.write(hash)
-                write_pkt_line_str(f"{path.name}\n")
-        flush_pkt()
-        flush_pkt()
-    finally:
-        tmpfile.unlink()
+    io = BytesIO()
+    while pkg := read_pkt_line():
+        io.write(pkg)
+    io.seek(0)
+    size = io.getbuffer().nbytes
+    avg_size = max(avg_min, get_avg_size(size))
+    write_pkt_line_str("status=success\n")
+    flush_pkt()
+    buffer = io.getbuffer()
+    for cdc in fastcdc(io, avg_size=avg_size):
+        data = buffer[cdc.offset : cdc.offset + cdc.length]
+        hash = git_hash_blob(data)
+        path = hash_dir(cdcdir, hash).with_suffix(".cdc")
+        with path.open("w") as w:
+            w.write(hash)
+        write_pkt_line_str(f"{path.name}\n")
+    flush_pkt()
+    flush_pkt()
 
 
 def smudge_cdc(pathname, blob):
