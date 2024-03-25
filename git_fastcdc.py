@@ -86,7 +86,7 @@ def git_rev_list(rev):
 
 def git_mktree(tree):
     return run(
-        ["git", "mktree"],
+        ["git", "mktree", "--missing"],
         stdout=PIPE,
         input=tree,
         encoding="UTF-8",
@@ -371,7 +371,8 @@ def read_blobs(entry, cdcs):
 
 
 @cli.command()
-def rebuild():
+@click.option("--force/--no-force", default=False, help="Force generation of an index.")
+def rebuild(force):
     """Prune and rebuild fastcdc objects-index."""
     file = Path(".gitattributes")
     file_list = []
@@ -389,7 +390,7 @@ def rebuild():
                     for entry in file_list:
                         if fnmatch(entry, match):
                             read_blobs(entry, cdcs)
-    if old_cdcs != cdcs:
+    if force or old_cdcs != cdcs:
         write_cdcs(cdcs, base_hints)
 
 
