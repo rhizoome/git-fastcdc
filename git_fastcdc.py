@@ -265,6 +265,13 @@ def read_cdcs():
 
 def write_cdcs(cdcs):
     commit = None
+    parent = None
+    try:
+        parent = git_rev_parse(cdcbranch)
+    except CalledProcessError:
+        pass
+    if not parent:
+        attrs = git_hash_blob(b"*.cdc binary")
     if not cdcs:
         old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
         hash = gitempty
@@ -273,13 +280,10 @@ def write_cdcs(cdcs):
         append = tree.append
         for cdc in cdcs:
             append(f"100644 blob {cdc}\t{cdc}.cdc")
+        if not parent:
+            append(f"100644 blob {attrs}\t.gitattributes")
         tree = "\n".join(tree)
         hash = git_mktree(tree)
-    parent = None
-    try:
-        parent = git_rev_parse(cdcbranch)
-    except CalledProcessError:
-        pass
     if not parent:
         if not commit:
             commit = git_commit_tree(hash, "-m", "cdc")
