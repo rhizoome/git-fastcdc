@@ -17,6 +17,7 @@ tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcbranch = "git-fastcdc"
 cdcdir = Path(".cdc")
 cdcattr = "/.gitattributes text -binary -filter"
+gitempty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 avg_min = 128 * 1024
 
 
@@ -76,7 +77,7 @@ def git_hash_blob(data):
 
 def git_mktree(tree):
     return run(
-        ["git", "mktree", "--batch"],
+        ["git", "mktree"],
         stdout=PIPE,
         input=tree,
         encoding="UTF-8",
@@ -147,6 +148,13 @@ def git_rev_parse(rev):
 
 def git_add(*args):
     run(["git", "add"] + list(args), check=True)
+
+
+def git_branch(branch, commit, force=False):
+    if force:
+        run(["git", "branch", "-f", branch, commit], check=True)
+    else:
+        run(["git", "branch", branch, commit], check=True)
 
 
 def git_commit_tree(hash, *args):
@@ -289,31 +297,38 @@ def read_cdcs():
         return cdcs
     for line in git_ls_tree(cdcbranch).splitlines():
         _, _, rest = line.partition(" blob ")
-        hash, _, _ = line.partition("\t")
+        hash, _, _ = rest.partition("\t")
         cdcs.add(hash.strip())
     return cdcs
 
 
 def write_cdcs(cdcs):
-    tree = []
-    append = tree.append
-    for cdc in cdcs:
-        append(f"100644 blob {cdc}\t{cdc}.cdc")
-    tree = "\n".join(tree)
+    commit = None
+    if not cdcs:
+        old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
+        hash = gitempty
+    else:
+        tree = []
+        append = tree.append
+        for cdc in cdcs:
+            append(f"100644 blob {cdc}\t{cdc}.cdc")
+        tree = "\n".join(tree)
+        hash = git_mktree(tree)
     parent = None
-    hash = git_mktree(f"{tree}")
     try:
         parent = git_rev_parse(cdcbranch)
     except CalledProcessError:
         pass
     if not parent:
-        commit = git_commit_tree(hash, "-m", "cdc")
-        run(["git", "branch", cdcbranch, commit], check=True)
+        if not commit:
+            commit = git_commit_tree(hash, "-m", "cdc")
+        git_branch(cdcbranch, commit)
     else:
         old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
         if old_tree != hash:
-            commit = git_commit_tree(hash, "-m", "cdc", "-p", parent)
-            run(["git", "branch", "-f", cdcbranch, commit], check=True)
+            if not commit:
+                commit = git_commit_tree(hash, "-m", "cdc", "-p", parent)
+            git_branch(cdcbranch, commit, force=True)
 
 
 @cli.command()
@@ -356,15 +371,16 @@ def process():
         elif command == "smudge":
             smudge(pathname, blob)
     if old_cdcs != cdcs:
-        eprint(old_cdcs, cdcs)
         write_cdcs(cdcs)
 
 
-def read_blobs(entry, blobs):
+def read_blobs(entry, cdcs):
+    if not Path(entry).exists():
+        return
     git_add(entry)
     for blob in git_show(f":{entry}").decode(encoding="UTF-8").splitlines():
         if fnmatch(blob, "*.cdc"):
-            blobs.add(blob)
+            cdcs.add(Path(blob).stem)
 
 
 @cli.command()
@@ -376,7 +392,8 @@ def prune():
         entry = entry.strip()
         if ".gitattributes" not in entry:
             file_list.append(entry)
-    blobs = set()
+    old_cdcs = read_cdcs()
+    cdcs = set()
     if file.exists():
         with file.open("r", encoding="UTF-8") as f:
             for line in f:
@@ -384,7 +401,9 @@ def prune():
                     match = shlex.split(line)[0]
                     for entry in file_list:
                         if fnmatch(entry, match):
-                            read_blobs(entry, blobs)
+                            read_blobs(entry, cdcs)
+    if old_cdcs != cdcs:
+        write_cdcs(cdcs)
 
 
 @cli.command()
