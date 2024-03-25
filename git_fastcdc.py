@@ -223,7 +223,7 @@ def clean_ondisk(pathname, cdcs):
         tmpfile.unlink()
 
 
-def smudge(pathname, blob):
+def smudge(pathname):
     lines = []
     while pkg := read_pkt_line_str():
         lines.extend(pkg.splitlines())
@@ -321,16 +321,15 @@ def process():
         assert key == "pathname"
         blob = None
         while line := read_pkt_line_str():
-            key, _, value = line.partition("=")
-            if key == "blob":
-                blob = value
+            pass
+            # key, _, value = line.partition("=")
         if command == "clean":
             if ondisk():
                 new = clean_ondisk(pathname, cdcs) or new
             else:
                 new = clean(pathname, cdcs) or new
         elif command == "smudge":
-            smudge(pathname, blob)
+            smudge(pathname)
     if old_cdcs != cdcs:
         write_cdcs(cdcs)
 
