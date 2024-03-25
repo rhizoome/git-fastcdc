@@ -1,6 +1,10 @@
 # git-fastcdc
 
-Split certain files using content defined chunking for faster deduplication.
+Split certain files using content-defined-chunking for faster deduplication. It
+has a similar use-case to git-lfs, but blobs are in-repository. git-fastcdc is
+mitigates some of the speed penalties. Most use-cases are probably better of with
+git-lfs. If you have a focus on archival and deduplication, git-fastcdc might right
+for you.
 
 ## Enable
 
