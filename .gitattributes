@@ -1,2 +1,3 @@
 *.test binary filter=git_fastcdc
 /.cdc/**/*.cdc binary filter=git_fastcdc
+/.gitattributes text -binary -filter
