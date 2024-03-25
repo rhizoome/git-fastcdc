@@ -207,6 +207,7 @@ def process():
                 smudge_cdc(pathname, blob)
             else:
                 smudge(pathname, blob)
+    run(["git", "add", ".cdc"], check=True)
 
 
 @cli.command()
