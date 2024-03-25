@@ -359,8 +359,8 @@ def read_blobs(entry, cdcs):
 
 
 @cli.command()
-def prune():
-    """Prune fastcdc objects."""
+def rebuild():
+    """Prune and rebuild fastcdc objects-index."""
     file = Path(".gitattributes")
     file_list = []
     for entry in git_ls_files().splitlines():
