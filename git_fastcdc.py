@@ -93,6 +93,13 @@ def git_get_blob(hash):
     ).stdout
 
 
+def git_config_ondisk():
+    return run(
+        ["git", "config", "--local", "--get", "fastcdc.ondisk"],
+        stdout=PIPE,
+    ).stdout
+
+
 def git_show(id):
     return run(
         ["git", "show", id],
@@ -146,6 +153,30 @@ def clean(pathname):
     flush_pkt()
 
 
+def clean_ondisk(pathname):
+    try:
+        with tmpfile.open("wb") as f:
+            while pkg := read_pkt_line():
+                f.write(pkg)
+        size = tmpfile.stat().st_size
+        avg_size = max(avg_min, get_avg_size(size))
+        write_pkt_line_str("status=success\n")
+        flush_pkt()
+        with tmpfile.open("rb") as f:
+            for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
+                f.seek(cdc.offset)
+                data = f.read(cdc.length)
+                hash = git_hash_blob(data)
+                path = hash_dir(cdcdir, hash).with_suffix(".cdc")
+                with path.open("w") as w:
+                    w.write(hash)
+                write_pkt_line_str(f"{path.name}\n")
+        flush_pkt()
+        flush_pkt()
+    finally:
+        tmpfile.unlink()
+
+
 def smudge_cdc(pathname, blob):
     while read_pkt_line():
         pass
@@ -197,6 +228,16 @@ def cat():
     flush_pkt()
 
 
+_ondisk = None
+
+
+def ondisk():
+    global _ondisk
+    if _ondisk is None:
+        _ondisk = git_config_ondisk().strip() == b"true"
+    return _ondisk
+
+
 @cli.command()
 def process():
     """Called by git to do fastcdc."""
@@ -241,7 +282,10 @@ def process():
                 else:
                     cat()
             else:
-                clean(pathname)
+                if ondisk():
+                    clean_ondisk(pathname)
+                else:
+                    clean(pathname)
         elif command == "smudge":
             if str(pathname).startswith(".cdc/"):
                 smudge_cdc(pathname, blob)

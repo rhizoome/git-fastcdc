@@ -17,6 +17,12 @@ Edit .gitattributes:
 /.cdc/** binary filter=git_fastcdc
 ```
 
+By default git-fastcdc does fastcdc in-memory. Switch to ondisk:
+
+```bash
+git config --local fastcdc.ondisk true
+```
+
 ## How
 
 It will split files on filtering when you add them. The split files got into
