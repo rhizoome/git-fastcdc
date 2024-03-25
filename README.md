@@ -18,7 +18,6 @@ Edit .gitattributes:
 
 ```
 *.wav binary filter=git_fastcdc
-/.cdc/**/*.cdc binary filter=git_fastcdc
 /.gitattributes text -binary -filter
 ```
 
@@ -31,10 +30,7 @@ git config --local fastcdc.ondisk true
 ## How
 
 It will split files on filtering when you add them. The split files go into
-`.cdc` in the repository. The files in `.cdc` are filtered too, so they don't
-use up much space.
+the `git-fastcdc` branch. You need to push this branch to remotes too!
 
 You will see the actual data in the files in the working copy, in `*.wav` in the
 example above. But actually the blobs of these files are just a list of chunks.
-The blobs stored in git are actually in `.cdc`, but since these are not
-interesting, another filter will remove them from the working copy.
