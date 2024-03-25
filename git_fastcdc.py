@@ -180,7 +180,7 @@ def get_avg_size(size):
     return (box >> shift) << shift
 
 
-def clean(pathname, cdcs):
+def clean(pathname, cdcs, base_hints):
     io = BytesIO()
     while pkg := read_pkt_line():
         io.write(pkg)
@@ -194,12 +194,13 @@ def clean(pathname, cdcs):
         data = buffer[cdc.offset : cdc.offset + cdc.length]
         hash = git_hash_blob(data)
         cdcs.add(hash)
+        base_hints[hash] = pathname.stem
         write_pkt_line_str(f"{hash}.cdc\n")
     flush_pkt()
     flush_pkt()
 
 
-def clean_ondisk(pathname, cdcs):
+def clean_ondisk(pathname, cdcs, base_hints):
     try:
         with tmpfile.open("wb") as f:
             while pkg := read_pkt_line():
@@ -215,6 +216,7 @@ def clean_ondisk(pathname, cdcs):
                 data = f.read(cdc.length)
                 hash = git_hash_blob(data)
                 cdcs.add(hash)
+                base_hints[hash] = pathname.stem
                 write_pkt_line_str(f"{hash}.cdc\n")
             flush_pkt()
             flush_pkt()
@@ -251,6 +253,7 @@ def ondisk():
 
 
 def read_cdcs():
+    base_hints = {}
     cdcs = set()
     try:
         git_rev_parse(cdcbranch)
@@ -258,20 +261,22 @@ def read_cdcs():
         return cdcs
     for line in git_ls_tree(cdcbranch).splitlines():
         _, _, rest = line.partition(" blob ")
-        hash, _, _ = rest.partition("\t")
-        cdcs.add(hash.strip())
-    return cdcs
+        hash, _, rest = rest.partition("\t")
+        hint, _, _ = rest.rpartition("-")
+        hash = hash.strip()
+        if hint:
+            base_hints[hash] = hint
+        cdcs.add(hash)
+    return cdcs, base_hints
 
 
-def write_cdcs(cdcs):
+def write_cdcs(cdcs, base_hints):
     commit = None
     parent = None
     try:
         parent = git_rev_parse(cdcbranch)
     except CalledProcessError:
         pass
-    if not parent:
-        attrs = git_hash_blob(b"*.cdc binary")
     if not cdcs:
         old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
         hash = gitempty
@@ -279,9 +284,13 @@ def write_cdcs(cdcs):
         tree = []
         append = tree.append
         for cdc in cdcs:
-            append(f"100644 blob {cdc}\t{cdc}.cdc")
-        if not parent:
-            append(f"100644 blob {attrs}\t.gitattributes")
+            hint = base_hints.get(cdc)
+            if hint:
+                append(f"100644 blob {cdc}\t{hint}-{cdc}.cdc")
+            else:
+                append(f"100644 blob {cdc}\t{cdc}.cdc")
+        attrs = git_hash_blob(b"*.cdc binary")
+        append(f"100644 blob {attrs}\t.gitattributes")
         tree = "\n".join(tree)
         hash = git_mktree(tree)
     if not parent:
@@ -315,7 +324,7 @@ def process():
     write_pkt_line_str("capability=smudge")
     flush_pkt()
     new = False
-    cdcs = read_cdcs()
+    cdcs, base_hints = read_cdcs()
     old_cdcs = set(cdcs)
     while line := read_pkt_line_str():
         key, _, command = line.partition("=")
@@ -329,13 +338,13 @@ def process():
             # key, _, value = line.partition("=")
         if command == "clean":
             if ondisk():
-                new = clean_ondisk(pathname, cdcs) or new
+                new = clean_ondisk(pathname, cdcs, base_hints) or new
             else:
-                new = clean(pathname, cdcs) or new
+                new = clean(pathname, cdcs, base_hints) or new
         elif command == "smudge":
             smudge(pathname)
     if old_cdcs != cdcs:
-        write_cdcs(cdcs)
+        write_cdcs(cdcs, base_hints)
 
 
 def read_blobs(entry, cdcs):
@@ -358,7 +367,7 @@ def prune():
         entry = entry.strip()
         if ".gitattributes" not in entry:
             file_list.append(entry)
-    old_cdcs = read_cdcs()
+    old_cdcs, base_hints = read_cdcs()
     cdcs = set()
     if file.exists():
         with file.open("r", encoding="UTF-8") as f:
@@ -369,7 +378,7 @@ def prune():
                         if fnmatch(entry, match):
                             read_blobs(entry, cdcs)
     if old_cdcs != cdcs:
-        write_cdcs(cdcs)
+        write_cdcs(cdcs, base_hints)
 
 
 @cli.command()
