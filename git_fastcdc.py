@@ -94,7 +94,7 @@ def clean(pathname):
         with tmpfile.open("wb") as f:
             while pkg := read_pkt_line():
                 f.write(pkg)
-        avg_size = int(max(256 * 1024, tmpfile.stat().st_size / 32))
+        avg_size = int(max(256 * 1024, tmpfile.stat().st_size / 48))
         write_pkt_line_str("status=success\n")
         flush_pkt()
         with tmpfile.open("rb") as f:
@@ -237,9 +237,11 @@ def install():
         ],
         check=True,
     )
-    with Path(".gitattributes").open("r", encoding="UTF-8") as f:
+    file = Path(".gitattributes")
+    file.touch()
+    with file.open("r", encoding="UTF-8") as f:
         data = f.read().strip()
-    with Path(".gitattributes").open("w", encoding="UTF-8") as f:
+    with file.open("w", encoding="UTF-8") as f:
         f.write(f"{data}\n{cdcline}\n")
 
 
@@ -262,9 +264,11 @@ def do_remove():
             "filter.git_fastcdc.required",
         ],
     )
-    with Path(".gitattributes").open("r", encoding="UTF-8") as f:
+    file = Path(".gitattributes")
+    file.touch()
+    with file.open("r", encoding="UTF-8") as f:
         data = f.read()
-    with Path(".gitattributes").open("w", encoding="UTF-8") as f:
+    with file.open("w", encoding="UTF-8") as f:
         for line in data.splitlines():
             if cdcline not in line:
                 f.write(f"{line}\n")
