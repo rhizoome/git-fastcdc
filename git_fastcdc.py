@@ -1,4 +1,7 @@
+import os
+import shlex
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 from subprocess import PIPE, run
 
@@ -21,7 +24,7 @@ def eprint(*args):
 
 @click.group()
 def cli():
-    pass
+    os.chdir(git_toplevel())
 
 
 def read_pkt_line():
@@ -69,12 +72,36 @@ def git_hash_blob(data):
     )
 
 
+def git_toplevel():
+    return (
+        run(
+            ["git", "rev-parse", "--show-toplevel"],
+            check=True,
+            stdout=PIPE,
+        )
+        .stdout.decode()
+        .strip()
+    )
+
+
 def git_get_blob(hash):
     return run(
         ["git", "cat-file", "blob", hash],
         check=True,
         stdout=PIPE,
     ).stdout
+
+
+def git_show(id):
+    return run(
+        ["git", "show", id],
+        check=True,
+        stdout=PIPE,
+    ).stdout
+
+
+def git_add_cdc():
+    run(["git", "add", ".cdc"], check=True)
 
 
 def hash_dir(base, hash):
@@ -222,7 +249,53 @@ def process():
                 smudge_cdc(pathname, blob)
             else:
                 smudge(pathname, blob)
-    run(["git", "add", ".cdc"], check=True)
+    cdc = Path(".cdc")
+    if cdc.exists():
+        git_add_cdc()
+
+
+def remove_empty_dirs(path):
+    path = Path(path)
+
+    for subpath in path.iterdir():
+        if subpath.is_dir():
+            remove_empty_dirs(subpath)
+
+    if not any(path.iterdir()):
+        path.rmdir()
+
+
+def read_blobs(entry, blobs):
+    for blob in git_show(f"HEAD:{entry}").decode().splitlines():
+        if fnmatch(blob, "*.cdc"):
+            blobs.add(blob)
+
+
+def prune_blobs(blobs):
+    for file in Path(".").glob(".cdc/**/*.cdc"):
+        if file.name not in blobs:
+            file.unlink()
+
+
+@cli.command()
+def prune():
+    """Prune fastcdc objects."""
+    file = Path(".gitattributes")
+    file_list = os.listdir(".")
+    blobs = set()
+    if file.exists():
+        with file.open("r", encoding="UTF-8") as f:
+            for line in f:
+                if "filter=git_fastcdc" in line and cdcline not in line:
+                    match = shlex.split(line)[0]
+                    for entry in file_list:
+                        if fnmatch(entry, match):
+                            read_blobs(entry, blobs)
+    prune_blobs(blobs)
+    cdc = Path(".cdc")
+    if cdc.exists():
+        remove_empty_dirs(cdc)
+        git_add_cdc()
 
 
 @cli.command()
