@@ -18,7 +18,7 @@ cdcbranch = "git-fastcdc"
 cdcdir = Path(".cdc")
 cdcattr = "/.gitattributes text -binary -filter"
 gitempty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-avg_min = 128 * 1024
+avg_min = 256 * 1024
 
 
 def eprint(*args):
