@@ -340,7 +340,9 @@ def read_blobs(entry, cdcs):
     git_add(entry)
     for blob in git_show(f":{entry}").decode(encoding="UTF-8").splitlines():
         if fnmatch(blob, "*.cdc"):
-            cdcs.add(Path(blob).stem)
+            hash = Path(blob).stem
+            if len(hash):
+                cdcs.add(hash)
 
 
 @cli.command()
