@@ -4,7 +4,7 @@ import sys
 from fnmatch import fnmatch
 from io import BytesIO
 from pathlib import Path
-from subprocess import PIPE, run
+from subprocess import DEVNULL, PIPE, CalledProcessError, run
 
 import click
 from fastcdc import fastcdc
@@ -14,9 +14,8 @@ buffer = sys.stdout.buffer
 write = buffer.write
 flush = buffer.flush
 tmpfile = Path(".fast_cdc_tmp_file_29310b6")
+cdcbranch = "git-fastcdc"
 cdcdir = Path(".cdc")
-cdcmatch = ".cdc/**/*.cdc"
-cdcline = "/.cdc/**/*.cdc binary filter=git_fastcdc"
 cdcattr = "/.gitattributes text -binary -filter"
 avg_min = 128 * 1024
 
@@ -70,21 +69,28 @@ def git_hash_blob(data):
             stdout=PIPE,
             input=data,
         )
-        .stdout.strip()
-        .decode(encoding="UTF-8")
-    )
-
-
-def git_toplevel():
-    return (
-        run(
-            ["git", "rev-parse", "--show-toplevel"],
-            check=True,
-            stdout=PIPE,
-        )
         .stdout.decode(encoding="UTF-8")
         .strip()
     )
+
+
+def git_mktree(tree):
+    return run(
+        ["git", "mktree", "--batch"],
+        stdout=PIPE,
+        input=tree,
+        encoding="UTF-8",
+        check=True,
+    ).stdout.strip()
+
+
+def git_toplevel():
+    return run(
+        ["git", "rev-parse", "--show-toplevel"],
+        encoding="UTF-8",
+        stdout=PIPE,
+        check=True,
+    ).stdout.strip()
 
 
 def git_ls_files():
@@ -93,7 +99,16 @@ def git_ls_files():
         check=True,
         encoding="UTF-8",
         stdout=PIPE,
-    ).stdout
+    ).stdout.strip()
+
+
+def git_ls_tree(rev):
+    return run(
+        ["git", "ls-tree", rev],
+        check=True,
+        encoding="UTF-8",
+        stdout=PIPE,
+    ).stdout.strip()
 
 
 def git_get_blob(hash):
@@ -111,22 +126,36 @@ def git_config_ondisk():
     ).stdout
 
 
-def git_show(id):
+def git_show(rev):
     return run(
-        ["git", "show", id],
+        ["git", "show", rev],
         check=True,
+        stderr=DEVNULL,
         stdout=PIPE,
-    ).stdout
+    ).stdout.strip()
+
+
+def git_rev_parse(rev):
+    return run(
+        ["git", "rev-parse", rev],
+        check=True,
+        stderr=DEVNULL,
+        encoding="UTF-8",
+        stdout=PIPE,
+    ).stdout.strip()
 
 
 def git_add(*args):
     run(["git", "add"] + list(args), check=True)
 
 
-def hash_dir(base, hash):
-    dir = base / hash[0:2] / hash[2:4]
-    dir.mkdir(parents=True, exist_ok=True)
-    return dir / hash
+def git_commit_tree(hash, *args):
+    return run(
+        ["git", "commit-tree", hash] + list(args),
+        stdout=PIPE,
+        encoding="UTF-8",
+        check=True,
+    ).stdout.strip()
 
 
 def chunk_string(input_string, chunk_size=65516):
@@ -143,8 +172,7 @@ def get_avg_size(size):
     return (box >> shift) << shift
 
 
-def clean(pathname):
-    new = False
+def clean(pathname, cdcs):
     io = BytesIO()
     while pkg := read_pkt_line():
         io.write(pkg)
@@ -157,41 +185,37 @@ def clean(pathname):
     for cdc in fastcdc(io, avg_size=avg_size):
         data = buffer[cdc.offset : cdc.offset + cdc.length]
         hash = git_hash_blob(data)
-        path = hash_dir(cdcdir, hash).with_suffix(".cdc")
-        new = new or not path.exists()
-        with path.open("w") as w:
-            w.write(hash)
-        write_pkt_line_str(f"{path.name}\n")
+        cdcs.add(hash)
+        write_pkt_line_str(f"{hash}.cdc\n")
     flush_pkt()
     flush_pkt()
-    return new
 
 
-def clean_ondisk(pathname):
-    try:
-        new = False
-        with tmpfile.open("wb") as f:
-            while pkg := read_pkt_line():
-                f.write(pkg)
-        size = tmpfile.stat().st_size
-        avg_size = max(avg_min, get_avg_size(size))
-        write_pkt_line_str("status=success\n")
-        flush_pkt()
-        with tmpfile.open("rb") as f:
-            for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
-                f.seek(cdc.offset)
-                data = f.read(cdc.length)
-                hash = git_hash_blob(data)
-                path = hash_dir(cdcdir, hash).with_suffix(".cdc")
-                new = new or not path.exists()
-                with path.open("w") as w:
-                    w.write(hash)
-                write_pkt_line_str(f"{path.name}\n")
-        flush_pkt()
-        flush_pkt()
-        return new
-    finally:
-        tmpfile.unlink()
+# def clean_ondisk(pathname):
+#     try:
+#         new = False
+#         with tmpfile.open("wb") as f:
+#             while pkg := read_pkt_line():
+#                 f.write(pkg)
+#         size = tmpfile.stat().st_size
+#         avg_size = max(avg_min, get_avg_size(size))
+#         write_pkt_line_str("status=success\n")
+#         flush_pkt()
+#         with tmpfile.open("rb") as f:
+#             for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
+#                 f.seek(cdc.offset)
+#                 data = f.read(cdc.length)
+#                 hash = git_hash_blob(data)
+#                 path = hash_dir(cdcdir, hash).with_suffix(".cdc")
+#                 new = new or not path.exists()
+#                 with path.open("w") as w:
+#                     w.write(hash)
+#                 write_pkt_line_str(f"{path.name}\n")
+#         flush_pkt()
+#         flush_pkt()
+#         return new
+#     finally:
+#         tmpfile.unlink()
 
 
 def smudge_cdc(pathname, blob):
@@ -257,6 +281,41 @@ def ondisk():
     return _ondisk
 
 
+def read_cdcs():
+    cdcs = set()
+    try:
+        git_rev_parse(cdcbranch)
+    except CalledProcessError:
+        return cdcs
+    for line in git_ls_tree(cdcbranch).splitlines():
+        _, _, rest = line.partition(" blob ")
+        hash, _, _ = line.partition("\t")
+        cdcs.add(hash.strip())
+    return cdcs
+
+
+def write_cdcs(cdcs):
+    tree = []
+    append = tree.append
+    for cdc in cdcs:
+        append(f"100644 blob {cdc}\t{cdc}.cdc")
+    tree = "\n".join(tree)
+    parent = None
+    hash = git_mktree(f"{tree}")
+    try:
+        parent = git_rev_parse(cdcbranch)
+    except CalledProcessError:
+        pass
+    if not parent:
+        commit = git_commit_tree(hash, "-m", "cdc")
+        run(["git", "branch", cdcbranch, commit], check=True)
+    else:
+        old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
+        if old_tree != hash:
+            commit = git_commit_tree(hash, "-m", "cdc", "-p", parent)
+            run(["git", "branch", "-f", cdcbranch, commit], check=True)
+
+
 @cli.command()
 def process():
     """Called by git to do fastcdc."""
@@ -276,6 +335,8 @@ def process():
     write_pkt_line_str("capability=smudge")
     flush_pkt()
     new = False
+    cdcs = read_cdcs()
+    old_cdcs = set(cdcs)
     while line := read_pkt_line_str():
         key, _, command = line.partition("=")
         assert key == "command"
@@ -283,49 +344,20 @@ def process():
         pathname = Path(pathname)
         assert key == "pathname"
         blob = None
-        ref = None
-        treeish = None
         while line := read_pkt_line_str():
             key, _, value = line.partition("=")
-            if key == "treeish":
-                treeish = value
-            elif key == "ref":
-                ref = value
-            elif key == "blob":
+            if key == "blob":
                 blob = value
-            else:
-                RuntimeError("Unknown argument")
         if command == "clean":
-            if str(pathname).startswith(".cdc/"):
-                if pathname.suffix == ".cdc":
-                    clean_cdc(pathname)
-                else:
-                    cat()
+            if ondisk():
+                new = clean_ondisk(pathname, cdcs) or new
             else:
-                if ondisk():
-                    new = clean_ondisk(pathname) or new
-                else:
-                    new = clean(pathname) or new
+                new = clean(pathname, cdcs) or new
         elif command == "smudge":
-            if str(pathname).startswith(".cdc/"):
-                smudge_cdc(pathname, blob)
-            else:
-                smudge(pathname, blob)
-    if new:
-        cdc = Path(".cdc")
-        if cdc.exists():
-            git_add(cdc)
-
-
-def remove_empty_dirs(path):
-    path = Path(path)
-
-    for subpath in path.iterdir():
-        if subpath.is_dir():
-            remove_empty_dirs(subpath)
-
-    if not any(path.iterdir()):
-        path.rmdir()
+            smudge(pathname, blob)
+    if old_cdcs != cdcs:
+        eprint(old_cdcs, cdcs)
+        write_cdcs(cdcs)
 
 
 def read_blobs(entry, blobs):
@@ -335,12 +367,6 @@ def read_blobs(entry, blobs):
             blobs.add(blob)
 
 
-def prune_blobs(blobs):
-    for file in Path(".").glob(cdcmatch):
-        if file.name not in blobs:
-            file.unlink()
-
-
 @cli.command()
 def prune():
     """Prune fastcdc objects."""
@@ -348,22 +374,17 @@ def prune():
     file_list = []
     for entry in git_ls_files().splitlines():
         entry = entry.strip()
-        if not (fnmatch(entry, cdcmatch) or ".gitattributes" in entry):
+        if ".gitattributes" not in entry:
             file_list.append(entry)
     blobs = set()
     if file.exists():
         with file.open("r", encoding="UTF-8") as f:
             for line in f:
-                if "filter=git_fastcdc" in line and cdcline not in line:
+                if "filter=git_fastcdc" in line:
                     match = shlex.split(line)[0]
                     for entry in file_list:
                         if fnmatch(entry, match):
                             read_blobs(entry, blobs)
-    prune_blobs(blobs)
-    cdc = Path(".cdc")
-    if cdc.exists():
-        remove_empty_dirs(cdc)
-        git_add(cdc)
 
 
 @cli.command()
@@ -398,7 +419,6 @@ def install():
     with file.open("w", encoding="UTF-8") as f:
         if data:
             f.write(f"{data}\n")
-        f.write(f"{cdcline}\n")
         f.write(f"{cdcattr}\n")
 
 
@@ -427,7 +447,7 @@ def do_remove():
         data = f.read()
     with file.open("w", encoding="UTF-8") as f:
         for line in data.splitlines():
-            if cdcline not in line and cdcattr not in line:
+            if cdcattr not in line:
                 f.write(f"{line}\n")
 
 
