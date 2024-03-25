@@ -199,31 +199,28 @@ def clean(pathname, cdcs):
     flush_pkt()
 
 
-# def clean_ondisk(pathname):
-#     try:
-#         new = False
-#         with tmpfile.open("wb") as f:
-#             while pkg := read_pkt_line():
-#                 f.write(pkg)
-#         size = tmpfile.stat().st_size
-#         avg_size = max(avg_min, get_avg_size(size))
-#         write_pkt_line_str("status=success\n")
-#         flush_pkt()
-#         with tmpfile.open("rb") as f:
-#             for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
-#                 f.seek(cdc.offset)
-#                 data = f.read(cdc.length)
-#                 hash = git_hash_blob(data)
-#                 path = hash_dir(cdcdir, hash).with_suffix(".cdc")
-#                 new = new or not path.exists()
-#                 with path.open("w") as w:
-#                     w.write(hash)
-#                 write_pkt_line_str(f"{path.name}\n")
-#         flush_pkt()
-#         flush_pkt()
-#         return new
-#     finally:
-#         tmpfile.unlink()
+def clean_ondisk(pathname, cdcs):
+    try:
+        with tmpfile.open("wb") as f:
+            while pkg := read_pkt_line():
+                f.write(pkg)
+            f.seek(0)
+        size = tmpfile.stat().st_size
+        avg_size = max(avg_min, get_avg_size(size))
+        write_pkt_line_str("status=success\n")
+        flush_pkt()
+        with tmpfile.open("rb") as f:
+            for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
+                f.seek(cdc.offset)
+                data = f.read(cdc.length)
+                hash = git_hash_blob(data)
+                cdcs.add(hash)
+                write_pkt_line_str(f"{hash}.cdc\n")
+            flush_pkt()
+            flush_pkt()
+
+    finally:
+        tmpfile.unlink()
 
 
 def smudge(pathname, blob):
