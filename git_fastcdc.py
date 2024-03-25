@@ -12,6 +12,7 @@ flush = buffer.flush
 tmpfile1 = Path(".fast_cdc_tmp_file_29310b6")
 tmpfile2 = Path(".fast_cdc_tmp_file_0c2a0b9")
 cdcdir = Path(".cdc")
+cdcline = "/.cdc/** binary filter=git_fastcdc"
 
 
 def eprint(*args):
@@ -32,7 +33,8 @@ def read_pkt_line():
     if length == 0:
         return b""
 
-    return read(length - 4)
+    res = read(length - 4)
+    return res
 
 
 def read_pkt_line_str():
@@ -119,6 +121,7 @@ def smudge_cdc(pathname, blob):
 
 def clean_cdc(pathname):
     hash = read_pkt_line_str()
+    assert read_pkt_line_str() == ""
     write_pkt_line_str("status=success\n")
     flush_pkt()
     blob = git_get_blob(hash)
@@ -144,6 +147,19 @@ def smudge(pathname, blob):
     flush_pkt()
 
 
+def cat():
+    pkgs = []
+    append = pkgs.append
+    while pkg := read_pkt_line():
+        append(pkg)
+    write_pkt_line_str("status=success\n")
+    flush_pkt()
+    for pkg in pkgs:
+        write_pkt_line(pkg)
+    flush_pkt()
+    flush_pkt()
+
+
 @cli.command()
 def process():
     """Called by git to do fastcdc."""
@@ -152,7 +168,6 @@ def process():
     write_pkt_line_str("git-filter-server")
     write_pkt_line_str("version=2")
     flush_pkt()
-    # write_pkt_line_str("capability=clean\ncapability=smudge\n")
     assert read_pkt_line_str() == ""
     capability = set()
     while line := read_pkt_line_str():
@@ -169,10 +184,19 @@ def process():
         key, _, pathname = read_pkt_line_str().partition("=")
         pathname = Path(pathname)
         assert key == "pathname"
-        if command == "smudge":
-            key, _, blob = read_pkt_line_str().partition("=")
-            assert key == "blob"
-        assert read_pkt_line_str() == ""
+        blob = None
+        ref = None
+        treeish = None
+        while line := read_pkt_line_str():
+            key, _, value = line.partition("=")
+            if key == "treeish":
+                treeish = value
+            elif key == "ref":
+                ref = value
+            elif key == "blob":
+                blob = value
+            else:
+                RuntimeError("Unknown argument")
         if command == "clean":
             if str(pathname).startswith(".cdc/"):
                 clean_cdc(pathname)
@@ -210,6 +234,10 @@ def install():
         ],
         check=True,
     )
+    with Path(".gitattributes").open("r", encoding="UTF-8") as f:
+        data = f.read().strip()
+    with Path(".gitattributes").open("w", encoding="UTF-8") as f:
+        f.write(f"{data}\n{cdcline}\n")
 
 
 def do_remove():
@@ -231,6 +259,12 @@ def do_remove():
             "filter.git_fastcdc.required",
         ],
     )
+    with Path(".gitattributes").open("r", encoding="UTF-8") as f:
+        data = f.read()
+    with Path(".gitattributes").open("w", encoding="UTF-8") as f:
+        for line in data.splitlines():
+            if cdcline not in line:
+                f.write(f"{line}\n")
 
 
 @cli.command()
