@@ -144,6 +144,7 @@ def get_avg_size(size):
 
 
 def clean(pathname):
+    new = False
     io = BytesIO()
     while pkg := read_pkt_line():
         io.write(pkg)
@@ -157,15 +158,18 @@ def clean(pathname):
         data = buffer[cdc.offset : cdc.offset + cdc.length]
         hash = git_hash_blob(data)
         path = hash_dir(cdcdir, hash).with_suffix(".cdc")
+        new = new or not path.exists()
         with path.open("w") as w:
             w.write(hash)
         write_pkt_line_str(f"{path.name}\n")
     flush_pkt()
     flush_pkt()
+    return new
 
 
 def clean_ondisk(pathname):
     try:
+        new = False
         with tmpfile.open("wb") as f:
             while pkg := read_pkt_line():
                 f.write(pkg)
@@ -179,11 +183,13 @@ def clean_ondisk(pathname):
                 data = f.read(cdc.length)
                 hash = git_hash_blob(data)
                 path = hash_dir(cdcdir, hash).with_suffix(".cdc")
+                new = new or not path.exists()
                 with path.open("w") as w:
                     w.write(hash)
                 write_pkt_line_str(f"{path.name}\n")
         flush_pkt()
         flush_pkt()
+        return new
     finally:
         tmpfile.unlink()
 
@@ -269,6 +275,7 @@ def process():
     write_pkt_line_str("capability=clean")
     write_pkt_line_str("capability=smudge")
     flush_pkt()
+    new = False
     while line := read_pkt_line_str():
         key, _, command = line.partition("=")
         assert key == "command"
@@ -296,17 +303,18 @@ def process():
                     cat()
             else:
                 if ondisk():
-                    clean_ondisk(pathname)
+                    new = new or clean_ondisk(pathname)
                 else:
-                    clean(pathname)
+                    new = new or clean(pathname)
         elif command == "smudge":
             if str(pathname).startswith(".cdc/"):
                 smudge_cdc(pathname, blob)
             else:
                 smudge(pathname, blob)
-    cdc = Path(".cdc")
-    if cdc.exists():
-        git_add_cdc()
+    if new:
+        cdc = Path(".cdc")
+        if cdc.exists():
+            git_add(cdc)
 
 
 def remove_empty_dirs(path):
