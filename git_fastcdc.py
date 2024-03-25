@@ -258,7 +258,7 @@ def read_cdcs():
     try:
         git_rev_parse(cdcbranch)
     except CalledProcessError:
-        return cdcs
+        return cdcs, base_hints
     for line in git_ls_tree(cdcbranch).splitlines():
         _, _, rest = line.partition(" blob ")
         hash, _, rest = rest.partition("\t")
