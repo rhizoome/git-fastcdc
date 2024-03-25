@@ -355,7 +355,7 @@ def process():
                 clean(pathname, cdcs, base_hints)
         elif command == "smudge":
             smudge(pathname)
-    if write:
+    if write and cdcs:
         write_cdcs(cdcs, base_hints)
 
 
