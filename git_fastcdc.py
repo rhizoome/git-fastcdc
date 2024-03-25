@@ -148,7 +148,7 @@ def clean(pathname):
         path = hash_dir(cdcdir, hash).with_suffix(".cdc")
         with path.open("w") as w:
             w.write(hash)
-        write_pkt_line_str(f"{path.name}\n")
+        write_pkt_line_str(f"{hash}\n")
     flush_pkt()
     flush_pkt()
 
@@ -182,7 +182,8 @@ def smudge_cdc(pathname, blob):
         pass
     write_pkt_line_str("status=success\n")
     flush_pkt()
-    write_pkt_line_str(pathname.name)
+    assert pathname.stem == blob
+    write_pkt_line_str(blob)
     flush_pkt()
     flush_pkt()
 
