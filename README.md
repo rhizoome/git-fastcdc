@@ -21,7 +21,7 @@ Edit .gitattributes:
 /.gitattributes text -binary -filter
 ```
 
-By default git-fastcdc does fastcdc in-memory. Switch to ondisk:
+By default git-fastcdc runs in-memory. Switch to on-disk:
 
 ```bash
 git config --local fastcdc.ondisk true
