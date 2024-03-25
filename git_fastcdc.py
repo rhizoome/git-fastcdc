@@ -344,7 +344,7 @@ def process():
         elif command == "smudge":
             smudge(pathname)
     if old_cdcs != cdcs:
-        write_cdcs(cdcs, base_hints)
+        write_cdcs(cdcs - old_cdcs, base_hints)
 
 
 def read_blobs(entry, cdcs):
