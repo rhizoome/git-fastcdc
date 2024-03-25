@@ -11,7 +11,8 @@ write = buffer.write
 flush = buffer.flush
 tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcdir = Path(".cdc")
-cdcline = "/.cdc/** binary filter=git_fastcdc"
+cdcline = "/.cdc/**/*.cdc binary filter=git_fastcdc"
+avg_min = 128 * 1024
 
 
 def eprint(*args):
@@ -89,21 +90,30 @@ def chunk_string(input_string, chunk_size=65516):
     ]
 
 
+def get_avg_size(size):
+    box = int(size / 32)
+    bits = box.bit_length()
+    shift = max(bits - 5, 0)
+    return (box >> shift) << shift
+
+
 def clean(pathname):
     try:
         with tmpfile.open("wb") as f:
             while pkg := read_pkt_line():
                 f.write(pkg)
-        avg_size = int(max(256 * 1024, tmpfile.stat().st_size / 48))
+        size = tmpfile.stat().st_size
+        avg_size = max(avg_min, get_avg_size(size))
         write_pkt_line_str("status=success\n")
         flush_pkt()
         with tmpfile.open("rb") as f:
             for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
                 f.seek(cdc.offset)
                 data = f.read(cdc.length)
-                path = hash_dir(cdcdir, git_hash_blob(data))
+                hash = git_hash_blob(data)
+                path = hash_dir(cdcdir, hash).with_suffix(".cdc")
                 with path.open("w") as w:
-                    w.write(path.name)
+                    w.write(hash)
                 write_pkt_line_str(f"{path.name}\n")
         flush_pkt()
         flush_pkt()
@@ -201,7 +211,10 @@ def process():
                 RuntimeError("Unknown argument")
         if command == "clean":
             if str(pathname).startswith(".cdc/"):
-                clean_cdc(pathname)
+                if pathname.suffix == ".cdc":
+                    clean_cdc(pathname)
+                else:
+                    cat()
             else:
                 clean(pathname)
         elif command == "smudge":
@@ -242,7 +255,9 @@ def install():
     with file.open("r", encoding="UTF-8") as f:
         data = f.read().strip()
     with file.open("w", encoding="UTF-8") as f:
-        f.write(f"{data}\n{cdcline}\n")
+        if data:
+            f.write(f"{data}\n")
+        f.write(f"{cdcline}\n")
 
 
 def do_remove():
