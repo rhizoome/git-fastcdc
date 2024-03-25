@@ -86,7 +86,7 @@ def git_rev_list(rev):
 
 def git_mktree(tree):
     return run(
-        ["git", "mktree", "--missing"],
+        ["git", "mktree"],
         stdout=PIPE,
         input=tree,
         encoding="UTF-8",
