@@ -372,7 +372,8 @@ def read_blobs(entry, cdcs):
 
 @cli.command()
 @click.option("--force/--no-force", default=False, help="Force generation of an index.")
-def rebuild(force):
+@click.option("--all/--no-all", default=False, help="Write all historic obejcts.")
+def rebuild(force, all):
     """Rebuild fastcdc objects-index."""
     file = Path(".gitattributes")
     file_list = []
@@ -381,7 +382,10 @@ def rebuild(force):
         if ".gitattributes" not in entry:
             file_list.append(entry)
     old_cdcs, base_hints = read_cdcs()
-    cdcs = set()
+    if all:
+        cdcs = set(old_cdcs)
+    else:
+        cdcs = set()
     if file.exists():
         with file.open("r", encoding="UTF-8") as f:
             for line in f:
@@ -390,7 +394,7 @@ def rebuild(force):
                     for entry in file_list:
                         if fnmatch(entry, match):
                             read_blobs(entry, cdcs)
-    if force or old_cdcs != cdcs:
+    if force or all or old_cdcs != cdcs:
         write_cdcs(cdcs, base_hints)
 
 
