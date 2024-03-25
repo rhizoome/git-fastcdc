@@ -373,7 +373,7 @@ def read_blobs(entry, cdcs):
 @cli.command()
 @click.option("--force/--no-force", default=False, help="Force generation of an index.")
 def rebuild(force):
-    """Prune and rebuild fastcdc objects-index."""
+    """Rebuild fastcdc objects-index."""
     file = Path(".gitattributes")
     file_list = []
     for entry in git_ls_files().splitlines():
