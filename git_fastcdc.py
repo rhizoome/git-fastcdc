@@ -303,9 +303,9 @@ def process():
                     cat()
             else:
                 if ondisk():
-                    new = new or clean_ondisk(pathname)
+                    new = clean_ondisk(pathname) or new
                 else:
-                    new = new or clean(pathname)
+                    new = clean(pathname) or new
         elif command == "smudge":
             if str(pathname).startswith(".cdc/"):
                 smudge_cdc(pathname, blob)
