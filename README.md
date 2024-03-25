@@ -29,8 +29,9 @@ git config --local fastcdc.ondisk true
 
 ## How
 
-It will split files on filtering when you add them. The split files got into
-`.cdc`. The files in `.cdc` are filtered too, so they don't use up much space.
+It will split files on filtering when you add them. The split files go into
+`.cdc` in the repository. The files in `.cdc` are filtered too, so they don't
+use up much space.
 
 You will see the actual data in the files in the working copy, in `*.wav` in the
 example above. But actually the blobs of these files are just a list of chunks.
