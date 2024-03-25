@@ -75,6 +75,15 @@ def git_hash_blob(data):
     )
 
 
+def git_rev_list(rev):
+    return run(
+        ["git", "rev-list", rev],
+        stdout=PIPE,
+        encoding="UTF-8",
+        check=True,
+    ).stdout.strip()
+
+
 def git_mktree(tree):
     return run(
         ["git", "mktree"],
@@ -259,14 +268,16 @@ def read_cdcs():
         git_rev_parse(cdcbranch)
     except CalledProcessError:
         return cdcs, base_hints
-    for line in git_ls_tree(cdcbranch).splitlines():
-        _, _, rest = line.partition(" blob ")
-        hash, _, rest = rest.partition("\t")
-        hint, _, _ = rest.rpartition("-")
-        hash = hash.strip()
-        if hint:
-            base_hints[hash] = hint
-        cdcs.add(hash)
+    for rev in git_rev_list(cdcbranch).splitlines():
+        rev = rev.strip()
+        for line in git_ls_tree(rev).splitlines():
+            _, _, rest = line.partition(" blob ")
+            hash, _, rest = rest.partition("\t")
+            hint, _, _ = rest.rpartition("-")
+            hash = hash.strip()
+            if hint:
+                base_hints[hash] = hint
+            cdcs.add(hash)
     return cdcs, base_hints
 
 
