@@ -19,6 +19,7 @@ Edit .gitattributes:
 ```
 *.wav binary filter=git_fastcdc
 /.gitattributes text -binary -filter
+/.gitignore text -binary -filter
 ```
 
 By default git-fastcdc runs in-memory. Switch to on-disk:

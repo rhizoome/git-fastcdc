@@ -17,6 +17,7 @@ tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcbranch = "git-fastcdc"
 cdcdir = Path(".cdc")
 cdcattr = "/.gitattributes text -binary -filter"
+cdcignore = "/.gitignore text -binary -filter"
 gitempty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 avg_min = 256 * 1024
 
@@ -431,6 +432,7 @@ def install():
         if data:
             f.write(f"{data}\n")
         f.write(f"{cdcattr}\n")
+        f.write(f"{cdcignore}\n")
 
 
 def do_remove():
@@ -458,7 +460,7 @@ def do_remove():
         data = f.read()
     with file.open("w", encoding="UTF-8") as f:
         for line in data.splitlines():
-            if cdcattr not in line:
+            if cdcattr not in line and cdcignore not in line:
                 f.write(f"{line}\n")
 
 

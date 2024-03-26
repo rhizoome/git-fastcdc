@@ -1,2 +1,3 @@
 *.test binary filter=git_fastcdc
 /.gitattributes text -binary -filter
+/.gitignore text -binary -filter
