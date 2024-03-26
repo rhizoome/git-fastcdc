@@ -413,6 +413,32 @@ def rebuild(force, all):
 
 
 @cli.command()
+def useful_config():
+    """Set useful config on the repository. no auto gc and no loose compression."""
+
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "gc.auto",
+            "0",
+        ],
+        check=True,
+    )
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "core.looseCompression",
+            "0",
+        ],
+        check=True,
+    )
+
+
+@cli.command()
 def install():
     """Install fastcdc in the current repository."""
 
