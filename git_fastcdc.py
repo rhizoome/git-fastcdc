@@ -190,6 +190,17 @@ def get_avg_size(size):
     return (box >> shift) << shift
 
 
+def make_hint(pathname):
+    hint = f"{pathname.parent}_{pathname.stem}"
+    hint = hint.replace("/", "")
+    hint = hint.replace("-", "_")
+    hint = hint.strip(".")
+    hint = hint.strip("_")
+    hint = hint.strip(".")
+    hint = hint.strip("_")
+    return hint
+
+
 def clean(pathname, cdcs, base_hints):
     io = BytesIO()
     while pkg := read_pkt_line():
@@ -204,7 +215,7 @@ def clean(pathname, cdcs, base_hints):
         data = buffer[cdc.offset : cdc.offset + cdc.length]
         hash = git_hash_blob(data)
         cdcs.add(hash)
-        base_hints[hash] = pathname.stem
+        base_hints[hash] = make_hint(pathname)
         write_pkt_line_str(f"{hash}.cdc\n")
     flush_pkt()
     flush_pkt()
@@ -226,7 +237,7 @@ def clean_ondisk(pathname, cdcs, base_hints):
                 data = f.read(cdc.length)
                 hash = git_hash_blob(data)
                 cdcs.add(hash)
-                base_hints[hash] = pathname.stem
+                base_hints[hash] = make_hint(pathname)
                 write_pkt_line_str(f"{hash}.cdc\n")
             flush_pkt()
             flush_pkt()
@@ -360,13 +371,15 @@ def process():
         write_cdcs(cdcs, base_hints)
 
 
-def read_blobs(entry, cdcs):
-    if not Path(entry).exists():
+def read_blobs(entry, cdcs, base_hints):
+    entry = Path(entry)
+    if not entry.exists():
         return
     git_add(entry)
     for blob in git_show(f":{entry}").decode(encoding="UTF-8").splitlines():
         if fnmatch(blob, "*.cdc"):
             hash = Path(blob).stem
+            base_hints[hash] = make_hint(entry)
             if len(hash):
                 cdcs.add(hash)
 
@@ -394,7 +407,7 @@ def rebuild(force, all):
                     match = shlex.split(line)[0]
                     for entry in file_list:
                         if fnmatch(entry, match):
-                            read_blobs(entry, cdcs)
+                            read_blobs(entry, cdcs, base_hints)
     if force or all or old_cdcs != cdcs:
         write_cdcs(cdcs, base_hints)
 
