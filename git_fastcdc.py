@@ -20,6 +20,7 @@ cdcattr = "/.gitattributes text -binary -filter"
 cdcignore = "/.gitignore text -binary -filter"
 gitempty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 avg_min = 256 * 1024
+avg_max = 128 * 1024 * 1024
 
 
 def eprint(*args):
@@ -187,7 +188,9 @@ def get_avg_size(size):
     box = int(size / 16)
     bits = box.bit_length()
     shift = max(bits - 4, 0)
-    return (box >> shift) << shift
+    avg_size = (box >> shift) << shift
+    avg_size = max(avg_min, avg_size)
+    return min(avg_max, avg_size)
 
 
 def make_hint(pathname):
@@ -207,7 +210,7 @@ def clean(pathname, cdcs, base_hints):
         io.write(pkg)
     io.seek(0)
     size = io.getbuffer().nbytes
-    avg_size = max(avg_min, get_avg_size(size))
+    avg_size = get_avg_size(size)
     write_pkt_line_str("status=success\n")
     flush_pkt()
     buffer = io.getbuffer()
@@ -228,7 +231,7 @@ def clean_ondisk(pathname, cdcs, base_hints):
                 f.write(pkg)
             f.seek(0)
         size = tmpfile.stat().st_size
-        avg_size = max(avg_min, get_avg_size(size))
+        avg_size = get_avg_size(size)
         write_pkt_line_str("status=success\n")
         flush_pkt()
         with tmpfile.open("rb") as f:
@@ -247,12 +250,13 @@ def clean_ondisk(pathname, cdcs, base_hints):
 
 
 def smudge(pathname):
-    lines = []
-    while pkg := read_pkt_line_str():
-        lines.extend(pkg.splitlines())
+    pkgs = []
+    while pkg := read_pkt_line():
+        pkgs.append(pkg)
+    data = b"".join(pkgs).decode(encoding="UTF-8")
     write_pkt_line_str("status=success\n")
     flush_pkt()
-    for line in lines:
+    for line in data.splitlines():
         line = line.strip()
         hash = Path(line).stem
         if line:
