@@ -376,7 +376,7 @@ def read_cdcs():
 
 def write_cdcs(cdcs, base_hints):
     trees = []
-    for chunk in chunk_seq(list(cdcs), chunk_size=1000):
+    for chunk in chunk_seq(list(cdcs), chunk_size=2000):
         tree = []
         append = tree.append
         for cdc in chunk:
@@ -388,16 +388,16 @@ def write_cdcs(cdcs, base_hints):
         attrs = git_hash_blob(b"*.cdc binary")
         append(f"100644 blob {attrs}\t.gitattributes")
         tree = "\n".join(tree)
-        hash = git_mktree(tree)
-        trees.append(hash)
+        trees.append(tree)
 
     commit = None
     try:
         commit = git_rev_parse(cdcbranch)
     except CalledProcessError:
         pass
-    force = commit is None
-    for hash in trees:
+    force = commit is not None
+    for tree in tqdm(trees, desc="trees", delay=2):
+        hash = git_mktree(tree)
         if not commit:
             commit = git_commit_tree(hash, "-m", "cdc")
         else:
