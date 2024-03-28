@@ -321,12 +321,13 @@ def write_cdcs(cdcs, base_hints):
     else:
         tree = []
         append = tree.append
-        for cdc in cdcs:
-            hint = base_hints.get(cdc)
-            if hint:
-                append(f"100644 blob {cdc}\t{hint}-{cdc}.cdc")
-            else:
-                append(f"100644 blob {cdc}\t{cdc}.cdc")
+        for chunk in chunk_seq(list(cdcs), chunk_size=1000):
+            for cdc in chunk:
+                hint = base_hints.get(cdc)
+                if hint:
+                    append(f"100644 blob {cdc}\t{hint}-{cdc}.cdc")
+                else:
+                    append(f"100644 blob {cdc}\t{cdc}.cdc")
         attrs = git_hash_blob(b"*.cdc binary")
         append(f"100644 blob {attrs}\t.gitattributes")
         tree = "\n".join(tree)
