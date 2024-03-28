@@ -13,6 +13,7 @@ git-fastcdc = 'git_fastcdc:cli'
 python = "^3.11"
 fastcdc = "^1.5.0"
 click = "^8.1.7"
+tqdm = "^4.66.2"
 
 
 [tool.poetry.group.dev.dependencies]

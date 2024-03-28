@@ -8,6 +8,7 @@ from subprocess import DEVNULL, PIPE, CalledProcessError, run
 
 import click
 from fastcdc import fastcdc
+from tqdm import tqdm
 
 read = sys.stdin.buffer.read
 buffer = sys.stdout.buffer
@@ -297,7 +298,7 @@ def read_cdcs():
         git_rev_parse(cdcbranch)
     except CalledProcessError:
         return cdcs, base_hints
-    for rev in git_rev_list(cdcbranch).splitlines():
+    for rev in tqdm(git_rev_list(cdcbranch).splitlines(), delay=10):
         for line in git_ls_tree(rev).splitlines():
             _, _, rest = line.partition(" blob ")
             hash, _, rest = rest.partition("\t")
@@ -386,7 +387,7 @@ def process():
     if write:
         to_write = cdcs - cdcs_recent
         if to_write:
-            write_cdcs(cdcs, base_hints)
+            write_cdcs(to_write, base_hints)
 
 
 def read_blobs(entry, cdcs, base_hints):
@@ -402,31 +403,27 @@ def read_blobs(entry, cdcs, base_hints):
 
 
 @cli.command()
-@click.option("--force/--no-force", default=False, help="Force generation of an index.")
-@click.option("--all/--no-all", default=False, help="Write all historic obejcts.")
-def rebuild(force, all):
-    """Rebuild fastcdc objects-index."""
+def update():
+    """Update fastcdc objects-index from current files."""
     file = Path(".gitattributes")
-    file_list = []
-    for entry in git_ls_files().splitlines():
-        entry = entry.strip()
-        if ".gitattributes" not in entry:
-            file_list.append(entry)
-    old_cdcs, base_hints = read_cdcs()
-    if all:
-        cdcs = set(old_cdcs)
-    else:
-        cdcs = set()
-    if file.exists():
-        with file.open("r", encoding="UTF-8") as f:
-            for line in f:
-                if "filter=git_fastcdc" in line:
-                    match = shlex.split(line)[0]
-                    for entry in file_list:
-                        if fnmatch(entry, match):
-                            read_blobs(entry, cdcs, base_hints)
-    if force or all or old_cdcs != cdcs:
-        write_cdcs(cdcs, base_hints)
+    if not file.exists():
+        return
+    file_list = git_ls_files().splitlines()
+    cdcs_log, base_hints = read_cdcs()
+    cdcs = set()
+    check_files = set()
+    with file.open("r", encoding="UTF-8") as f:
+        for line in f:
+            if "filter=git_fastcdc" in line:
+                match = shlex.split(line)[0]
+                for entry in file_list:
+                    if fnmatch(entry, match):
+                        check_files.add(entry)
+    for entry in tqdm(list(check_files), delay=10):
+        read_blobs(entry, cdcs, base_hints)
+    to_write = cdcs - cdcs_log
+    if to_write:
+        write_cdcs(to_write, base_hints)
 
 
 @cli.command()
