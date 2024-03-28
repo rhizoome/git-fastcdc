@@ -63,8 +63,14 @@ def flush_pkt():
     flush()
 
 
+_batch = None
+
+
 def git_cat_batch():
-    return Popen(["git", "cat-file", "--batch"], stdout=PIPE, stdin=PIPE)
+    global _batch
+    if _batch is None:
+        _batch = Popen(["git", "cat-file", "--batch"], stdout=PIPE, stdin=PIPE)
+    return _batch
 
 
 def git_cat_get(entry, stdin, stdout):
@@ -77,8 +83,10 @@ def git_cat_get(entry, stdin, stdout):
     return data
 
 
-def proc_cleanup(proc):
-    if proc:
+def batch_cleanup():
+    global _batch
+    if _batch:
+        proc = _batch
         proc.stdin.close()
         proc.stdout.close()
         if proc.poll() is None:
@@ -97,6 +105,7 @@ def proc_cleanup(proc):
             if proc.poll() is None:
                 eprint("error: needed to kill subprocess()")
                 proc.kill()
+        _batch = None
 
 
 def git_hash_blob(data):
@@ -160,14 +169,6 @@ def git_ls_tree(rev):
         encoding="UTF-8",
         stdout=PIPE,
     ).stdout.strip()
-
-
-def git_get_blob(hash):
-    return run(
-        ["git", "cat-file", "blob", hash],
-        check=True,
-        stdout=PIPE,
-    ).stdout
 
 
 def git_config_ondisk():
@@ -291,11 +292,14 @@ def smudge(pathname):
     data = b"".join(pkgs).decode("UTF-8")
     write_pkt_line_str("status=success\n")
     flush_pkt()
+    proc = git_cat_batch()
+    stdin = proc.stdin
+    stdout = proc.stdout
     for line in data.splitlines():
         line = line.strip()
         hash = Path(line).stem
         if line:
-            blob = git_get_blob(hash)
+            blob = git_cat_get(hash, stdin, stdout)
             for chunk in chunk_seq(blob):
                 write_pkt_line(chunk)
     flush_pkt()
@@ -322,7 +326,6 @@ def read_trees(branch, rev_limit=None):
     stdout = proc.stdout
     for rev in git_rev_list(branch, limit=rev_limit).splitlines():
         yield git_cat_get(f"{rev}^{{tree}}", stdin, stdout)
-    proc_cleanup(proc)
 
 
 def parse_git_tree(binary_tree):
@@ -410,46 +413,49 @@ def write_cdcs(cdcs, base_hints, no_progress=True):
 @cli.command()
 def process():
     """Called by git to do fastcdc."""
-    assert read_pkt_line_str() == "git-filter-client"
-    assert read_pkt_line_str() == "version=2"
-    write_pkt_line_str("git-filter-server")
-    write_pkt_line_str("version=2")
-    flush_pkt()
-    assert read_pkt_line_str() == ""
-    capability = set()
-    while line := read_pkt_line_str():
-        key, _, cap = line.partition("=")
-        assert key == "capability"
-        capability.add(cap)
-    assert {"clean", "smudge"}.issubset(capability)
-    write_pkt_line_str("capability=clean")
-    write_pkt_line_str("capability=smudge")
-    flush_pkt()
-    cdcs = set()
-    cdcs_recent = read_recent()
-    base_hints = {}
-    write = False
-    while line := read_pkt_line_str():
-        key, _, command = line.partition("=")
-        assert key == "command"
-        key, _, pathname = read_pkt_line_str().partition("=")
-        pathname = Path(pathname)
-        assert key == "pathname"
+    try:
+        assert read_pkt_line_str() == "git-filter-client"
+        assert read_pkt_line_str() == "version=2"
+        write_pkt_line_str("git-filter-server")
+        write_pkt_line_str("version=2")
+        flush_pkt()
+        assert read_pkt_line_str() == ""
+        capability = set()
         while line := read_pkt_line_str():
-            pass
-            # key, _, value = line.partition("=")
-        if command == "clean":
-            write = True
-            if ondisk():
-                clean_ondisk(pathname, cdcs, base_hints)
-            else:
-                clean(pathname, cdcs, base_hints)
-        elif command == "smudge":
-            smudge(pathname)
-    if write:
-        to_write = cdcs - cdcs_recent
-        if to_write:
-            write_cdcs(to_write, base_hints)
+            key, _, cap = line.partition("=")
+            assert key == "capability"
+            capability.add(cap)
+        assert {"clean", "smudge"}.issubset(capability)
+        write_pkt_line_str("capability=clean")
+        write_pkt_line_str("capability=smudge")
+        flush_pkt()
+        cdcs = set()
+        cdcs_recent = read_recent()
+        base_hints = {}
+        write = False
+        while line := read_pkt_line_str():
+            key, _, command = line.partition("=")
+            assert key == "command"
+            key, _, pathname = read_pkt_line_str().partition("=")
+            pathname = Path(pathname)
+            assert key == "pathname"
+            while line := read_pkt_line_str():
+                pass
+                # key, _, value = line.partition("=")
+            if command == "clean":
+                write = True
+                if ondisk():
+                    clean_ondisk(pathname, cdcs, base_hints)
+                else:
+                    clean(pathname, cdcs, base_hints)
+            elif command == "smudge":
+                smudge(pathname)
+        if write:
+            to_write = cdcs - cdcs_recent
+            if to_write:
+                write_cdcs(to_write, base_hints)
+    finally:
+        batch_cleanup()
 
 
 def read_blobs(entry, stdin, stdout, cdcs, base_hints):
@@ -493,7 +499,7 @@ def update():
         for entry in tqdm(list(check_files), desc="read files", delay=2):
             read_blobs(entry, stdin, stdout, cdcs, base_hints)
     finally:
-        proc_cleanup(proc)
+        batch_cleanup()
     to_write = cdcs - cdcs_log
     if to_write:
         write_cdcs(to_write, base_hints, no_progress=False)
@@ -559,6 +565,41 @@ def install():
             f.write(f"{data}\n")
         f.write(f"{cdcattr}\n")
         f.write(f"{cdcignore}\n")
+
+
+@cli.group()
+def delta():
+    """Enable/disable delta-compression."""
+    pass
+
+
+@delta.command()
+def enable():
+    """Enable delta-compression."""
+    run(
+        [
+            "git",
+            "config",
+            "--unset",
+            "core.bigFileThreshold",
+        ],
+        check=True,
+    )
+
+
+@delta.command()
+def disable():
+    """Disable delta-compression."""
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "core.bigFileThreshold",
+            "1",
+        ],
+        check=True,
+    )
 
 
 def do_remove():
