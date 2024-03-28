@@ -4,7 +4,7 @@ import sys
 from fnmatch import fnmatch
 from io import BytesIO
 from pathlib import Path
-from subprocess import DEVNULL, PIPE, CalledProcessError, run
+from subprocess import DEVNULL, PIPE, CalledProcessError, Popen, run
 
 import click
 from fastcdc import fastcdc
@@ -51,12 +51,12 @@ def read_pkt_line_str():
 
 def write_pkt_line(data):
     length = len(data) + 4
-    write(f"{length:04x}".encode() + data)
+    write(f"{length:04x}".encode(encoding="UTF-8") + data)
     flush()
 
 
 def write_pkt_line_str(string):
-    write_pkt_line(string.encode())
+    write_pkt_line(string.encode(encoding="UTF-8"))
 
 
 def flush_pkt():
@@ -286,8 +286,10 @@ def read_recent():
     for rev in git_rev_list(cdcbranch, limit=10).splitlines():
         for line in git_ls_tree(rev).splitlines():
             _, _, rest = line.partition(" blob ")
-            hash, _, _ = rest.partition("\t")
-            cdcs.add(hash)
+            hash, _, rest = rest.partition("\t")
+            _, _, ext = rest.rpartition(".")
+            if ext == "cdc":
+                cdcs.add(hash)
     return cdcs
 
 
@@ -298,14 +300,16 @@ def read_cdcs():
         git_rev_parse(cdcbranch)
     except CalledProcessError:
         return cdcs, base_hints
-    for rev in tqdm(git_rev_list(cdcbranch).splitlines(), delay=10):
+    for rev in tqdm(git_rev_list(cdcbranch).splitlines(), desc="revions", delay=2):
         for line in git_ls_tree(rev).splitlines():
             _, _, rest = line.partition(" blob ")
             hash, _, rest = rest.partition("\t")
             hint, _, _ = rest.rpartition("-")
-            if hint:
-                base_hints[hash] = hint
-            cdcs.add(hash)
+            _, _, ext = rest.rpartition(".")
+            if ext == "cdc":
+                if hint:
+                    base_hints[hash] = hint
+                cdcs.add(hash)
     return cdcs, base_hints
 
 
@@ -390,16 +394,25 @@ def process():
             write_cdcs(to_write, base_hints)
 
 
-def read_blobs(entry, cdcs, base_hints):
+def read_blobs(entry, stdin, stdout, cdcs, base_hints):
     entry = Path(entry)
-    if not entry.exists():
+    stdin.write(f":{entry}\n".encode(encoding="UTF-8"))
+    stdin.flush()
+    line = stdout.readline().decode(encoding="UTF-8").strip()
+    _, _, data_len = line.rpartition(" ")
+    data = stdout.read(int(data_len))
+    try:
+        data = data.decode(encoding="UTF-8")
+    except UnicodeDecodeError:
+        # No data for us, we wrote UTF-8
         return
-    for blob in git_show(f":{entry}").decode(encoding="UTF-8").splitlines():
+    for blob in data.splitlines():
         if fnmatch(blob, "*.cdc"):
             hash = Path(blob).stem
             base_hints[hash] = make_hint(entry)
-            if len(hash):
+            if len(hash) == 40:
                 cdcs.add(hash)
+    stdout.readline()
 
 
 @cli.command()
@@ -419,8 +432,23 @@ def update():
                 for entry in file_list:
                     if fnmatch(entry, match):
                         check_files.add(entry)
-    for entry in tqdm(list(check_files), delay=10):
-        read_blobs(entry, cdcs, base_hints)
+    proc = None
+    try:
+        proc = Popen(["git", "cat-file", "--batch"], stdout=PIPE, stdin=PIPE)
+        stdin = proc.stdin
+        stdout = proc.stdout
+        for entry in tqdm(list(check_files), desc="files", delay=2):
+            read_blobs(entry, stdin, stdout, cdcs, base_hints)
+    finally:
+        if proc:
+            proc.stdin.close()
+            if proc.returncode is None:
+                proc.wait(1)
+                proc.terminate()
+                proc.wait(1)
+                if proc.returncode is None:
+                    eprint("error: needed to kill subprocess()")
+                    proc.kill()
     to_write = cdcs - cdcs_log
     if to_write:
         write_cdcs(to_write, base_hints)
