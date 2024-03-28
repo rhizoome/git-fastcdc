@@ -160,10 +160,6 @@ def git_rev_parse(rev):
     ).stdout.strip()
 
 
-def git_add(*args):
-    run(["git", "add"] + list(args), check=True)
-
-
 def git_branch(branch, commit, force=False):
     if force:
         run(["git", "branch", "-f", branch, commit], check=True)
@@ -396,7 +392,6 @@ def read_blobs(entry, cdcs, base_hints):
     entry = Path(entry)
     if not entry.exists():
         return
-    git_add(entry)
     for blob in git_show(f":{entry}").decode(encoding="UTF-8").splitlines():
         if fnmatch(blob, "*.cdc"):
             hash = Path(blob).stem
