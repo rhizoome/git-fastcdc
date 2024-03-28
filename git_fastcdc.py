@@ -20,7 +20,6 @@ cdcattr = "/.gitattributes text -binary -filter"
 cdcignore = "/.gitignore text -binary -filter"
 gitempty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 avg_min = 256 * 1024
-avg_max = 128 * 1024 * 1024
 
 
 def eprint(*args):
@@ -77,9 +76,13 @@ def git_hash_blob(data):
     )
 
 
-def git_rev_list(rev):
+def git_rev_list(rev, limit=None):
+    if limit:
+        n = ["-n", str(limit)]
+    else:
+        n = []
     return run(
-        ["git", "rev-list", rev],
+        ["git", "rev-list"] + n + [rev],
         stdout=PIPE,
         encoding="UTF-8",
         check=True,
@@ -190,7 +193,7 @@ def get_avg_size(size):
     shift = max(bits - 4, 0)
     avg_size = (box >> shift) << shift
     avg_size = max(avg_min, avg_size)
-    return min(avg_max, avg_size)
+    return avg_size
 
 
 def make_hint(pathname):
@@ -277,6 +280,20 @@ def ondisk():
     return _ondisk
 
 
+def read_recent():
+    cdcs = set()
+    try:
+        git_rev_parse(cdcbranch)
+    except CalledProcessError:
+        return cdcs
+    for rev in git_rev_list(cdcbranch, limit=10).splitlines():
+        for line in git_ls_tree(rev).splitlines():
+            _, _, rest = line.partition(" blob ")
+            hash, _, _ = rest.partition("\t")
+            cdcs.add(hash)
+    return cdcs
+
+
 def read_cdcs():
     base_hints = {}
     cdcs = set()
@@ -285,12 +302,10 @@ def read_cdcs():
     except CalledProcessError:
         return cdcs, base_hints
     for rev in git_rev_list(cdcbranch).splitlines():
-        rev = rev.strip()
         for line in git_ls_tree(rev).splitlines():
             _, _, rest = line.partition(" blob ")
             hash, _, rest = rest.partition("\t")
             hint, _, _ = rest.rpartition("-")
-            hash = hash.strip()
             if hint:
                 base_hints[hash] = hint
             cdcs.add(hash)
@@ -351,6 +366,7 @@ def process():
     write_pkt_line_str("capability=smudge")
     flush_pkt()
     cdcs = set()
+    cdcs_recent = read_recent()
     base_hints = {}
     write = False
     while line := read_pkt_line_str():
@@ -359,7 +375,6 @@ def process():
         key, _, pathname = read_pkt_line_str().partition("=")
         pathname = Path(pathname)
         assert key == "pathname"
-        blob = None
         while line := read_pkt_line_str():
             pass
             # key, _, value = line.partition("=")
@@ -371,8 +386,10 @@ def process():
                 clean(pathname, cdcs, base_hints)
         elif command == "smudge":
             smudge(pathname)
-    if write and cdcs:
-        write_cdcs(cdcs, base_hints)
+    if write:
+        to_write = cdcs - cdcs_recent
+        if to_write:
+            write_cdcs(cdcs, base_hints)
 
 
 def read_blobs(entry, cdcs, base_hints):
