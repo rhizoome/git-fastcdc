@@ -46,22 +46,54 @@ def read_pkt_line():
 
 
 def read_pkt_line_str():
-    return read_pkt_line().decode(encoding="UTF-8").strip()
+    return read_pkt_line().decode("UTF-8").strip()
 
 
 def write_pkt_line(data):
     length = len(data) + 4
-    write(f"{length:04x}".encode(encoding="UTF-8") + data)
+    write(f"{length:04x}".encode("UTF-8") + data)
     flush()
 
 
 def write_pkt_line_str(string):
-    write_pkt_line(string.encode(encoding="UTF-8"))
+    write_pkt_line(string.encode("UTF-8"))
 
 
 def flush_pkt():
     write(b"0000")
     flush()
+
+
+def git_cat_batch():
+    return Popen(["git", "cat-file", "--batch"], stdout=PIPE, stdin=PIPE)
+
+
+def git_cat_get(entry, stdin, stdout):
+    stdin.write(f"{entry}\n".encode("UTF-8"))
+    stdin.flush()
+    line = stdout.readline().decode("UTF-8").strip()
+    _, _, data_len = line.rpartition(" ")
+    data = stdout.read(int(data_len))
+    stdout.readline()
+    return data
+
+
+def proc_cleanup(proc):
+    if proc:
+        proc.stdin.close()
+        proc.stdout.close()
+        if proc.returncode is None:
+            proc.wait(0.1)
+        if proc.returncode is None:
+            proc.wait(0.2)
+        if proc.returncode is None:
+            proc.wait(0.4)
+        if proc.returncode is None:
+            proc.terminate()
+            proc.wait(1)
+            if proc.returncode is None:
+                eprint("error: needed to kill subprocess()")
+                proc.kill()
 
 
 def git_hash_blob(data):
@@ -72,7 +104,7 @@ def git_hash_blob(data):
             stdout=PIPE,
             input=data,
         )
-        .stdout.decode(encoding="UTF-8")
+        .stdout.decode("UTF-8")
         .strip()
     )
 
@@ -253,7 +285,7 @@ def smudge(pathname):
     pkgs = []
     while pkg := read_pkt_line():
         pkgs.append(pkg)
-    data = b"".join(pkgs).decode(encoding="UTF-8")
+    data = b"".join(pkgs).decode("UTF-8")
     write_pkt_line_str("status=success\n")
     flush_pkt()
     for line in data.splitlines():
@@ -277,17 +309,43 @@ def ondisk():
     return _ondisk
 
 
+def read_trees(branch, rev_limit=None):
+    try:
+        git_rev_parse(branch)
+    except CalledProcessError:
+        return
+    proc = git_cat_batch()
+    stdin = proc.stdin
+    stdout = proc.stdout
+    for rev in git_rev_list(branch, limit=rev_limit).splitlines():
+        yield git_cat_get(f"{rev}^{{tree}}", stdin, stdout)
+    proc_cleanup(proc)
+
+
+def parse_git_tree(binary_tree):
+    entries = []
+    i = 0
+    while i < len(binary_tree):
+        space_index = binary_tree.index(b" ", i)
+        mode = binary_tree[i:space_index].decode("ascii")
+
+        null_index = binary_tree.index(b"\0", space_index)
+        filename = binary_tree[space_index + 1 : null_index].decode("UTF-8")
+
+        sha1 = binary_tree[null_index + 1 : null_index + 21]
+        sha1_hex = sha1.hex()
+
+        entries.append((mode, filename, sha1_hex))
+        i = null_index + 21
+
+    return entries
+
+
 def read_recent():
     cdcs = set()
-    try:
-        git_rev_parse(cdcbranch)
-    except CalledProcessError:
-        return cdcs
-    for rev in git_rev_list(cdcbranch, limit=10).splitlines():
-        for line in git_ls_tree(rev).splitlines():
-            _, _, rest = line.partition(" blob ")
-            hash, _, rest = rest.partition("\t")
-            _, _, ext = rest.rpartition(".")
+    for tree in read_trees(cdcbranch, rev_limit=10):
+        for _, filename, hash in parse_git_tree(tree):
+            _, _, ext = filename.rpartition(".")
             if ext == "cdc":
                 cdcs.add(hash)
     return cdcs
@@ -300,12 +358,10 @@ def read_cdcs():
         git_rev_parse(cdcbranch)
     except CalledProcessError:
         return cdcs, base_hints
-    for rev in tqdm(git_rev_list(cdcbranch).splitlines(), desc="revions", delay=2):
-        for line in git_ls_tree(rev).splitlines():
-            _, _, rest = line.partition(" blob ")
-            hash, _, rest = rest.partition("\t")
-            hint, _, _ = rest.rpartition("-")
-            _, _, ext = rest.rpartition(".")
+    for tree in tqdm(read_trees(cdcbranch), desc="revions", delay=2):
+        for _, filename, hash in parse_git_tree(tree):
+            rest, _, ext = filename.rpartition(".")
+            hint, _, _ = filename.rpartition("-")
             if ext == "cdc":
                 if hint:
                     base_hints[hash] = hint
@@ -396,13 +452,9 @@ def process():
 
 def read_blobs(entry, stdin, stdout, cdcs, base_hints):
     entry = Path(entry)
-    stdin.write(f":{entry}\n".encode(encoding="UTF-8"))
-    stdin.flush()
-    line = stdout.readline().decode(encoding="UTF-8").strip()
-    _, _, data_len = line.rpartition(" ")
-    data = stdout.read(int(data_len))
+    data = git_cat_get(f":{entry}", stdin, stdout)
     try:
-        data = data.decode(encoding="UTF-8")
+        data = data.decode("UTF-8")
     except UnicodeDecodeError:
         # No data for us, we wrote UTF-8
         return
@@ -412,7 +464,6 @@ def read_blobs(entry, stdin, stdout, cdcs, base_hints):
             base_hints[hash] = make_hint(entry)
             if len(hash) == 40:
                 cdcs.add(hash)
-    stdout.readline()
 
 
 @cli.command()
@@ -434,21 +485,13 @@ def update():
                         check_files.add(entry)
     proc = None
     try:
-        proc = Popen(["git", "cat-file", "--batch"], stdout=PIPE, stdin=PIPE)
+        proc = git_cat_batch()
         stdin = proc.stdin
         stdout = proc.stdout
         for entry in tqdm(list(check_files), desc="files", delay=2):
             read_blobs(entry, stdin, stdout, cdcs, base_hints)
     finally:
-        if proc:
-            proc.stdin.close()
-            if proc.returncode is None:
-                proc.wait(1)
-                proc.terminate()
-                proc.wait(1)
-                if proc.returncode is None:
-                    eprint("error: needed to kill subprocess()")
-                    proc.kill()
+        proc_cleanup(proc)
     to_write = cdcs - cdcs_log
     if to_write:
         write_cdcs(to_write, base_hints)
