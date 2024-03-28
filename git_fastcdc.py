@@ -180,7 +180,7 @@ def git_commit_tree(hash, *args):
     ).stdout.strip()
 
 
-def chunk_string(input_string, chunk_size=65516):
+def chunk_seq(input_string, chunk_size=65516):
     return [
         input_string[i : i + chunk_size]
         for i in range(0, len(input_string), chunk_size)
@@ -264,7 +264,7 @@ def smudge(pathname):
         hash = Path(line).stem
         if line:
             blob = git_get_blob(hash)
-            for chunk in chunk_string(blob):
+            for chunk in chunk_seq(blob):
                 write_pkt_line(chunk)
     flush_pkt()
     flush_pkt()
