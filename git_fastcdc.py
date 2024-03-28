@@ -17,10 +17,8 @@ write = buffer.write
 flush = buffer.flush
 tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcbranch = "git-fastcdc"
-cdcdir = Path(".cdc")
 cdcattr = "/.gitattributes text -binary -filter"
 cdcignore = "/.gitignore text -binary -filter"
-gitempty = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 avg_min = 256 * 1024
 
 
