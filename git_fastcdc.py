@@ -1,6 +1,7 @@
 import os
 import shlex
 import sys
+import time
 from fnmatch import fnmatch
 from io import BytesIO
 from pathlib import Path
@@ -82,20 +83,20 @@ def proc_cleanup(proc):
     if proc:
         proc.stdin.close()
         proc.stdout.close()
-        if proc.returncode is None:
-            proc.wait(0.001)
-        if proc.returncode is None:
-            proc.wait(0.01)
-        if proc.returncode is None:
-            proc.wait(0.1)
-        if proc.returncode is None:
-            proc.wait(0.2)
-        if proc.returncode is None:
-            proc.wait(0.4)
-        if proc.returncode is None:
+        if proc.poll() is None:
+            time.sleep(0.001)
+        if proc.poll() is None:
+            time.sleep(0.01)
+        if proc.poll() is None:
+            time.sleep(0.1)
+        if proc.poll() is None:
+            time.sleep(0.2)
+        if proc.poll() is None:
+            time.sleep(0.4)
+        if proc.poll() is None:
             proc.terminate()
-            proc.wait(1)
-            if proc.returncode is None:
+            time.sleep(1)
+            if proc.poll() is None:
                 eprint("error: needed to kill subprocess()")
                 proc.kill()
 
@@ -374,39 +375,38 @@ def read_cdcs():
 
 
 def write_cdcs(cdcs, base_hints):
-    commit = None
-    parent = None
-    try:
-        parent = git_rev_parse(cdcbranch)
-    except CalledProcessError:
-        pass
-    if not cdcs:
-        old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
-        hash = gitempty
-    else:
+    trees = []
+    for chunk in chunk_seq(list(cdcs), chunk_size=1000):
         tree = []
         append = tree.append
-        for chunk in chunk_seq(list(cdcs), chunk_size=1000):
-            for cdc in chunk:
-                hint = base_hints.get(cdc)
-                if hint:
-                    append(f"100644 blob {cdc}\t{hint}-{cdc}.cdc")
-                else:
-                    append(f"100644 blob {cdc}\t{cdc}.cdc")
+        for cdc in chunk:
+            hint = base_hints.get(cdc)
+            if hint:
+                append(f"100644 blob {cdc}\t{hint}-{cdc}.cdc")
+            else:
+                append(f"100644 blob {cdc}\t{cdc}.cdc")
         attrs = git_hash_blob(b"*.cdc binary")
         append(f"100644 blob {attrs}\t.gitattributes")
         tree = "\n".join(tree)
         hash = git_mktree(tree)
-    if not parent:
+        trees.append(hash)
+
+    commit = None
+    try:
+        commit = git_rev_parse(cdcbranch)
+    except CalledProcessError:
+        pass
+    force = commit is None
+    for hash in trees:
         if not commit:
             commit = git_commit_tree(hash, "-m", "cdc")
-        git_branch(cdcbranch, commit)
+        else:
+            commit = git_commit_tree(hash, "-m", "cdc", "-p", commit)
+
+    if force:
+        git_branch(cdcbranch, commit, force=True)
     else:
-        old_tree = git_rev_parse(f"{cdcbranch}^{{tree}}")
-        if old_tree != hash:
-            if not commit:
-                commit = git_commit_tree(hash, "-m", "cdc", "-p", parent)
-            git_branch(cdcbranch, commit, force=True)
+        git_branch(cdcbranch, commit)
 
 
 @cli.command()
