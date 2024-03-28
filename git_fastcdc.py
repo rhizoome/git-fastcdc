@@ -363,7 +363,7 @@ def read_cdcs():
         git_rev_parse(cdcbranch)
     except CalledProcessError:
         return cdcs, base_hints
-    for tree in tqdm(read_trees(cdcbranch), desc="revions", delay=2):
+    for tree in tqdm(read_trees(cdcbranch), desc="read revions", delay=2):
         for _, filename, hash in parse_git_tree(tree):
             rest, _, ext = filename.rpartition(".")
             hint, _, _ = filename.rpartition("-")
@@ -396,7 +396,7 @@ def write_cdcs(cdcs, base_hints, no_progress=True):
     except CalledProcessError:
         pass
     force = commit is not None
-    for tree in tqdm(trees, desc="trees", delay=2, disable=no_progress):
+    for tree in tqdm(trees, desc="write trees", delay=2, disable=no_progress):
         hash = git_mktree(tree)
         if not commit:
             commit = git_commit_tree(hash, "-m", "cdc")
@@ -492,7 +492,7 @@ def update():
         proc = git_cat_batch()
         stdin = proc.stdin
         stdout = proc.stdout
-        for entry in tqdm(list(check_files), desc="files", delay=2):
+        for entry in tqdm(list(check_files), desc="read files", delay=2):
             read_blobs(entry, stdin, stdout, cdcs, base_hints)
     finally:
         proc_cleanup(proc)
