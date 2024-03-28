@@ -28,6 +28,13 @@ By default git-fastcdc runs in-memory. Switch to on-disk:
 git config --local fastcdc.ondisk true
 ```
 
+If you have a pure git-fastcdc repository, you probably want to disable delta-compression 
+to benefit from the speedups through fastcdc.
+
+```bash
+git config --local core.bigFileThreshold 1
+```
+
 ## How
 
 It will split files on filtering when you add them. The split files go into
