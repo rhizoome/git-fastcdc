@@ -83,6 +83,10 @@ def proc_cleanup(proc):
         proc.stdin.close()
         proc.stdout.close()
         if proc.returncode is None:
+            proc.wait(0.001)
+        if proc.returncode is None:
+            proc.wait(0.01)
+        if proc.returncode is None:
             proc.wait(0.1)
         if proc.returncode is None:
             proc.wait(0.2)
