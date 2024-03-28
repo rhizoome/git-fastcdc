@@ -374,7 +374,7 @@ def read_cdcs():
     return cdcs, base_hints
 
 
-def write_cdcs(cdcs, base_hints):
+def write_cdcs(cdcs, base_hints, no_progress=True):
     trees = []
     for chunk in chunk_seq(list(cdcs), chunk_size=2000):
         tree = []
@@ -396,7 +396,7 @@ def write_cdcs(cdcs, base_hints):
     except CalledProcessError:
         pass
     force = commit is not None
-    for tree in tqdm(trees, desc="trees", delay=2):
+    for tree in tqdm(trees, desc="trees", delay=2, disable=no_progress):
         hash = git_mktree(tree)
         if not commit:
             commit = git_commit_tree(hash, "-m", "cdc")
@@ -498,7 +498,7 @@ def update():
         proc_cleanup(proc)
     to_write = cdcs - cdcs_log
     if to_write:
-        write_cdcs(to_write, base_hints)
+        write_cdcs(to_write, base_hints, no_progress=False)
 
 
 @cli.command()
