@@ -284,7 +284,6 @@ def clean_ondisk(pathname, cdcs, base_hints):
         while pkg := read_pkt_line():
             f.write(pkg)
         f.flush()
-        f.seek(0)
         size = f.tell()
         avg_size = get_avg_size(size)
         write_pkt_line_str("status=success\n")
@@ -587,8 +586,8 @@ def delta():
     pass
 
 
-@delta.command()
-def enable():
+@delta.command(name="enable")
+def enable_delta():
     """Enable delta-compression."""
     run(
         [
@@ -597,12 +596,11 @@ def enable():
             "--unset",
             "core.bigFileThreshold",
         ],
-        check=True,
     )
 
 
 @delta.command()
-def disable():
+def disable_delta(name="disable"):
     """Disable delta-compression."""
     run(
         [
@@ -613,6 +611,40 @@ def disable():
             "200k",
         ],
         check=True,
+    )
+
+
+@cli.group(name="ondisk")
+def ondisk_cli():
+    """Enable/disable ondisk-fastdcd."""
+    pass
+
+
+@ondisk_cli.command(name="enable")
+def enable_ondisk():
+    """Enable ondisk-fastcdc."""
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "fastcdc.ondisk",
+            "true",
+        ],
+        check=True,
+    )
+
+
+@ondisk_cli.command(name="disable")
+def disable_ondisk():
+    """Disable ondisk-fastcdc."""
+    run(
+        [
+            "git",
+            "config",
+            "--unset",
+            "fastcdc.ondisk",
+        ],
     )
 
 
