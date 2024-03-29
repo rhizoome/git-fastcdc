@@ -6,6 +6,7 @@ from fnmatch import fnmatch
 from io import BytesIO
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, CalledProcessError, Popen, run
+from tempfile import NamedTemporaryFile
 
 import click
 from fastcdc import fastcdc
@@ -15,7 +16,6 @@ read = sys.stdin.buffer.read
 buffer = sys.stdout.buffer
 write = buffer.write
 flush = buffer.flush
-tmpfile = Path(".fast_cdc_tmp_file_29310b6")
 cdcbranch = "git-fastcdc"
 cdcattr = "/.gitattributes text -binary -filter"
 cdcignore = "/.gitignore text -binary -filter"
@@ -23,7 +23,7 @@ avg_min = 256 * 1024
 pkt_size = 65516
 
 
-def eprin(*args):
+def eprint(*args):
     print(*args, file=sys.stderr)
 
 
@@ -278,28 +278,26 @@ def clean(pathname, cdcs, base_hints):
 
 
 def clean_ondisk(pathname, cdcs, base_hints):
-    try:
-        with tmpfile.open("wb") as f:
-            while pkg := read_pkt_line():
-                f.write(pkg)
-            f.seek(0)
-        size = tmpfile.stat().st_size
+    with NamedTemporaryFile(
+        "r+b", dir=".", prefix=".fast_cdc_tmp_file_", suffix=".tmp"
+    ) as f:
+        while pkg := read_pkt_line():
+            f.write(pkg)
+        f.flush()
+        f.seek(0)
+        size = f.tell()
         avg_size = get_avg_size(size)
         write_pkt_line_str("status=success\n")
         flush_pkt()
-        with tmpfile.open("rb") as f:
-            for cdc in fastcdc(str(tmpfile), avg_size=avg_size):
-                f.seek(cdc.offset)
-                data = f.read(cdc.length)
-                hash = git_hash_blob(data)
-                cdcs.add(hash)
-                base_hints[hash] = make_hint(pathname)
-                write_pkt_line_str(f"{hash}.cdc\n")
-            flush_pkt()
-            flush_pkt()
-
-    finally:
-        tmpfile.unlink()
+        for cdc in fastcdc(str(f.name), avg_size=avg_size):
+            f.seek(cdc.offset)
+            data = f.read(cdc.length)
+            hash = git_hash_blob(data)
+            cdcs.add(hash)
+            base_hints[hash] = make_hint(pathname)
+            write_pkt_line_str(f"{hash}.cdc\n")
+        flush_pkt()
+        flush_pkt()
 
 
 def smudge(pathname):
