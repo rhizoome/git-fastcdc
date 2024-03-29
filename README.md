@@ -43,7 +43,8 @@ cdc-blobs aren't.
 
 For my repository - 800GB of music collection:
 
-- Without git-fastcdc delta-compression took over 5 hours
+- Without git-fastcdc delta-compression took over 5 hours (actually it took all
+  night)
 - With git-fastcdc delta-compression takes about 2 minutes
 - With git-fastcdc the repostiory got slightly smaller: about 1%
 

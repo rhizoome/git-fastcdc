@@ -20,9 +20,10 @@ cdcbranch = "git-fastcdc"
 cdcattr = "/.gitattributes text -binary -filter"
 cdcignore = "/.gitignore text -binary -filter"
 avg_min = 256 * 1024
+pkt_size = 65516
 
 
-def eprint(*args):
+def eprin(*args):
     print(*args, file=sys.stderr)
 
 
@@ -81,6 +82,22 @@ def git_cat_get(entry, stdin, stdout):
     data = stdout.read(int(data_len))
     stdout.readline()
     return data
+
+
+def git_cat_yield(entry, stdin, stdout, chunk_size):
+    stdin.write(f"{entry}\n".encode("UTF-8"))
+    stdin.flush()
+    line = stdout.readline().decode("UTF-8").strip()
+    _, _, data_len = line.rpartition(" ")
+    data_len = int(data_len)
+    while data_len > 0:
+        if data_len >= chunk_size:
+            yield stdout.read(chunk_size)
+            data_len -= chunk_size
+        else:
+            yield stdout.read(data_len)
+            data_len = 0
+    stdout.readline()
 
 
 def batch_cleanup():
@@ -213,7 +230,7 @@ def git_commit_tree(hash, *args):
     ).stdout.strip()
 
 
-def chunk_seq(input_string, chunk_size=65516):
+def chunk_seq(input_string, chunk_size):
     return [
         input_string[i : i + chunk_size]
         for i in range(0, len(input_string), chunk_size)
@@ -299,8 +316,7 @@ def smudge(pathname):
         line = line.strip()
         hash = Path(line).stem
         if line:
-            blob = git_cat_get(hash, stdin, stdout)
-            for chunk in chunk_seq(blob):
+            for chunk in git_cat_yield(hash, stdin, stdout, pkt_size):
                 write_pkt_line(chunk)
     flush_pkt()
     flush_pkt()
