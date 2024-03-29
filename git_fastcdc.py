@@ -377,7 +377,7 @@ def read_cdcs():
 
 def write_cdcs(cdcs, base_hints, no_progress=True):
     trees = []
-    for chunk in chunk_seq(list(cdcs), chunk_size=2000):
+    for chunk in chunk_seq(list(cdcs), chunk_size=1500):
         tree = []
         append = tree.append
         for cdc in chunk:
@@ -596,7 +596,7 @@ def disable():
             "config",
             "--local",
             "core.bigFileThreshold",
-            "1",
+            "200k",
         ],
         check=True,
     )

@@ -32,8 +32,12 @@ If you have a pure git-fastcdc repository, you probably want to disable delta-co
 to benefit from the speedups through fastcdc.
 
 ```bash
-git config --local core.bigFileThreshold 1
+git fastcdc delta disable
 ```
+
+Which will set `core.bigFileThreshold` to `200k` which isn't exect science. It
+means most of the history- and meta-data is delta-compressed while most of the
+cdc-blobs aren't.
 
 ## How
 
