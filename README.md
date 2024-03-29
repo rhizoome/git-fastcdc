@@ -39,6 +39,21 @@ Which will set `core.bigFileThreshold` to `200k` which isn't exect science. It
 means most of the history- and meta-data is delta-compressed while most of the
 cdc-blobs aren't.
 
+## Results
+
+For my repository - 800GB of music collection:
+
+- Without git-fastcdc delta-compression took over 5 hours
+- With git-fastcdc delta-compression takes about 2 minutes
+- With git-fastcdc the repostiory got slightly smaller: about 1%
+
+So much faster repack, with the same delta-compression.
+
+Methodology: I took one state of my repostory from 2 years ago and one state
+from today. A lot of meta-data has changed in those two states, because I am
+constantly fixing these using beaTunes. In both tests I created two commits
+and did `reapck -a -d -f` at the end.
+
 ## How
 
 It will split files on filtering when you add them. The split files go into
