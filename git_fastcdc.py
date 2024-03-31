@@ -9,7 +9,7 @@ from subprocess import DEVNULL, PIPE, CalledProcessError, Popen, run
 from tempfile import NamedTemporaryFile
 
 import click
-from fastcdc import fastcdc
+from fastcdc import fastcdc  # type: ignore
 from tqdm import tqdm
 
 read = sys.stdin.buffer.read
@@ -64,7 +64,7 @@ def flush_pkt():
     flush()
 
 
-_batch = None
+_batch: Popen | None = None
 _batch_cleanup_times = (0.001, 0.01, 0.1, 0.2, 0.4)
 
 
@@ -105,8 +105,8 @@ def batch_cleanup():
     global _batch
     if _batch:
         proc = _batch
-        proc.stdin.close()
-        proc.stdout.close()
+        proc.stdin and proc.stdin.close()
+        proc.stdout and proc.stdout.close()
         for sleep_time in _batch_cleanup_times:
             if proc.poll() is not None:
                 break
@@ -296,7 +296,7 @@ def smudge(pathname):
     flush_pkt()
 
 
-_ondisk = None
+_ondisk: bool | None = None
 
 
 def ondisk():
@@ -348,8 +348,8 @@ def read_recent():
 
 
 def read_cdcs():
-    base_hints = {}
-    cdcs = set()
+    base_hints: dict[str, str] = {}
+    cdcs: set[str] = set()
     try:
         git_rev_parse(cdcbranch)
     except CalledProcessError:
@@ -368,7 +368,7 @@ def read_cdcs():
 def write_cdcs(cdcs, base_hints, no_progress=True):
     trees = []
     for chunk in chunk_seq(list(cdcs), chunk_size=1500):
-        tree = []
+        tree: list[str] = []
         append = tree.append
         for cdc in chunk:
             hint = base_hints.get(cdc)
@@ -378,8 +378,7 @@ def write_cdcs(cdcs, base_hints, no_progress=True):
                 append(f"100644 blob {cdc}\t{cdc}.cdc")
         attrs = git_hash_blob(b"*.cdc binary")
         append(f"100644 blob {attrs}\t.gitattributes")
-        tree = "\n".join(tree)
-        trees.append(tree)
+        trees.append("\n".join(tree))
 
     commit = None
     try:
@@ -387,8 +386,8 @@ def write_cdcs(cdcs, base_hints, no_progress=True):
     except CalledProcessError:
         pass
     force = commit is not None
-    for tree in tqdm(trees, desc="write trees", delay=2, disable=no_progress):
-        hash = git_mktree(tree)
+    for tree_str in tqdm(trees, desc="write trees", delay=2, disable=no_progress):
+        hash = git_mktree(tree_str)
         if not commit:
             commit = git_commit_tree(hash, "-m", "cdc")
         else:
@@ -416,9 +415,9 @@ def process():
         write_pkt_line_str("capability=clean")
         write_pkt_line_str("capability=smudge")
         flush_pkt()
-        cdcs = set()
+        cdcs: set[str] = set()
         cdcs_recent = read_recent()
-        base_hints = {}
+        base_hints: dict[str, str] = {}
         write = False
         while line := read_pkt_line_str():
             key, _, command = line.partition("=")
@@ -469,7 +468,7 @@ def update():
         return
     file_list = git_ls_files().splitlines()
     cdcs_log, base_hints = read_cdcs()
-    cdcs = set()
+    cdcs: set[str] = set()
     check_files = set()
     with file.open("r", encoding="UTF-8") as f:
         for line in f:
