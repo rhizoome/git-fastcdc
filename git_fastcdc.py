@@ -174,29 +174,11 @@ def git_ls_files():
     ).stdout.strip()
 
 
-def git_ls_tree(rev):
-    return run(
-        ["git", "ls-tree", rev],
-        check=True,
-        encoding="UTF-8",
-        stdout=PIPE,
-    ).stdout.strip()
-
-
 def git_config_ondisk():
     return run(
         ["git", "config", "--local", "--get", "fastcdc.ondisk"],
         stdout=PIPE,
     ).stdout
-
-
-def git_show(rev):
-    return run(
-        ["git", "show", rev],
-        check=True,
-        stderr=DEVNULL,
-        stdout=PIPE,
-    ).stdout.strip()
 
 
 def git_rev_parse(rev):
