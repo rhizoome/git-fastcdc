@@ -12,10 +12,6 @@ import click
 from fastcdc import fastcdc  # type: ignore
 from tqdm import tqdm
 
-read = sys.stdin.buffer.read
-buffer = sys.stdout.buffer
-write = buffer.write
-flush = buffer.flush
 cdcbranch = "git-fastcdc"
 cdcattr = "/.gitattributes text -binary -filter"
 cdcignore = "/.gitignore text -binary -filter"
@@ -58,6 +54,11 @@ def ondisk():
 
 
 # git pkt-line
+
+read = sys.stdin.buffer.read
+buffer = sys.stdout.buffer
+write = buffer.write
+flush = buffer.flush
 
 
 def read_pkt_line():
