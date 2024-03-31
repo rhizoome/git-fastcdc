@@ -309,7 +309,10 @@ def smudge(pathname):
     stdin = proc.stdin
     stdout = proc.stdout
     for line in data.splitlines():
-        line = line.strip()
+        if not fnmatch(line, "*.cdc"):
+            raise RuntimeError(
+                "Not a fastcdc file. Do you have a bad .gitattributes config?"
+            )
         hash = Path(line).stem
         if line:
             for chunk in git_cat_yield(hash, stdin, stdout, pkt_size):
