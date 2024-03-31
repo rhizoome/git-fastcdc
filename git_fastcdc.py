@@ -65,6 +65,7 @@ def flush_pkt():
 
 
 _batch = None
+_batch_cleanup_times = (0.001, 0.01, 0.1, 0.2, 0.4)
 
 
 def git_cat_batch():
@@ -106,16 +107,10 @@ def batch_cleanup():
         proc = _batch
         proc.stdin.close()
         proc.stdout.close()
-        if proc.poll() is None:
-            time.sleep(0.001)
-        if proc.poll() is None:
-            time.sleep(0.01)
-        if proc.poll() is None:
-            time.sleep(0.1)
-        if proc.poll() is None:
-            time.sleep(0.2)
-        if proc.poll() is None:
-            time.sleep(0.4)
+        for sleep_time in _batch_cleanup_times:
+            if proc.poll() is not None:
+                break
+            time.sleep(sleep_time)
         if proc.poll() is None:
             proc.terminate()
             time.sleep(1)
