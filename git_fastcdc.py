@@ -22,14 +22,42 @@ cdcignore = "/.gitignore text -binary -filter"
 avg_min = 256 * 1024
 pkt_size = 65516
 
+# Helpers
+
 
 def eprint(*args):
     print(*args, file=sys.stderr)
 
 
-@click.group()
-def cli():
-    os.chdir(git_toplevel())
+def chunk_seq(input_string, chunk_size):
+    return [
+        input_string[i : i + chunk_size]
+        for i in range(0, len(input_string), chunk_size)
+    ]
+
+
+def make_hint(pathname):
+    hint = f"{pathname.parent}_{pathname.stem}"
+    hint = hint.replace("/", "")
+    hint = hint.replace("-", "_")
+    hint = hint.strip(".")
+    hint = hint.strip("_")
+    hint = hint.strip(".")
+    hint = hint.strip("_")
+    return hint
+
+
+_ondisk: bool | None = None
+
+
+def ondisk():
+    global _ondisk
+    if _ondisk is None:
+        _ondisk = git_config_ondisk().strip() == b"true"
+    return _ondisk
+
+
+# git pkt-line
 
 
 def read_pkt_line():
@@ -63,6 +91,8 @@ def flush_pkt():
     write(b"0000")
     flush()
 
+
+# git cat-file batch
 
 _batch: Popen | None = None
 _batch_cleanup_times = (0.001, 0.01, 0.1, 0.2, 0.4)
@@ -118,6 +148,9 @@ def batch_cleanup():
                 eprint("error: needed to kill subprocess()")
                 proc.kill()
         _batch = None
+
+
+# git cli helpers
 
 
 def git_hash_blob(data):
@@ -207,11 +240,7 @@ def git_commit_tree(hash, *args):
     ).stdout.strip()
 
 
-def chunk_seq(input_string, chunk_size):
-    return [
-        input_string[i : i + chunk_size]
-        for i in range(0, len(input_string), chunk_size)
-    ]
+# clean
 
 
 def get_avg_size(size):
@@ -221,17 +250,6 @@ def get_avg_size(size):
     avg_size = (box >> shift) << shift
     avg_size = max(avg_min, avg_size)
     return avg_size
-
-
-def make_hint(pathname):
-    hint = f"{pathname.parent}_{pathname.stem}"
-    hint = hint.replace("/", "")
-    hint = hint.replace("-", "_")
-    hint = hint.strip(".")
-    hint = hint.strip("_")
-    hint = hint.strip(".")
-    hint = hint.strip("_")
-    return hint
 
 
 def clean(pathname, cdcs, base_hints):
@@ -276,6 +294,9 @@ def clean_ondisk(pathname, cdcs, base_hints):
         flush_pkt()
 
 
+# smudge
+
+
 def smudge(pathname):
     pkgs = []
     while pkg := read_pkt_line():
@@ -296,14 +317,7 @@ def smudge(pathname):
     flush_pkt()
 
 
-_ondisk: bool | None = None
-
-
-def ondisk():
-    global _ondisk
-    if _ondisk is None:
-        _ondisk = git_config_ondisk().strip() == b"true"
-    return _ondisk
+# reading state history
 
 
 def read_trees(branch, rev_limit=None):
@@ -365,6 +379,28 @@ def read_cdcs():
     return cdcs, base_hints
 
 
+# reading current state
+
+
+def read_blobs(entry, stdin, stdout, cdcs, base_hints):
+    entry = Path(entry)
+    data = git_cat_get(f":{entry}", stdin, stdout)
+    try:
+        data = data.decode("UTF-8")
+    except UnicodeDecodeError:
+        # No data for us, we wrote UTF-8
+        return
+    for blob in data.splitlines():
+        if fnmatch(blob, "*.cdc"):
+            hash = Path(blob).stem
+            base_hints[hash] = make_hint(entry)
+            if len(hash) == 40:
+                cdcs.add(hash)
+
+
+# writing state history
+
+
 def write_cdcs(cdcs, base_hints, no_progress=True):
     trees = []
     for chunk in chunk_seq(list(cdcs), chunk_size=1500):
@@ -394,6 +430,46 @@ def write_cdcs(cdcs, base_hints, no_progress=True):
             commit = git_commit_tree(hash, "-m", "cdc", "-p", commit)
 
     git_branch(cdcbranch, commit, force=force)
+
+
+# Cli
+
+
+def do_remove():
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "--unset",
+            "filter.git_fastcdc.process",
+        ],
+    )
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "--unset",
+            "filter.git_fastcdc.required",
+        ],
+    )
+    file = Path(".gitattributes")
+    file.touch()
+    with file.open("r", encoding="UTF-8") as f:
+        data = f.read()
+    with file.open("w", encoding="UTF-8") as f:
+        for line in data.splitlines():
+            if cdcattr not in line and cdcignore not in line:
+                f.write(f"{line}\n")
+
+
+@click.group()
+def cli():
+    os.chdir(git_toplevel())
+
+
+# cli actions
 
 
 @cli.command()
@@ -444,22 +520,6 @@ def process():
         batch_cleanup()
 
 
-def read_blobs(entry, stdin, stdout, cdcs, base_hints):
-    entry = Path(entry)
-    data = git_cat_get(f":{entry}", stdin, stdout)
-    try:
-        data = data.decode("UTF-8")
-    except UnicodeDecodeError:
-        # No data for us, we wrote UTF-8
-        return
-    for blob in data.splitlines():
-        if fnmatch(blob, "*.cdc"):
-            hash = Path(blob).stem
-            base_hints[hash] = make_hint(entry)
-            if len(hash) == 40:
-                cdcs.add(hash)
-
-
 @cli.command()
 def update():
     """Update fastcdc objects-index from current files."""
@@ -491,30 +551,7 @@ def update():
         write_cdcs(to_write, base_hints, no_progress=False)
 
 
-@cli.command()
-def useful_config():
-    """Set useful config on the repository. no auto gc and no loose compression."""
-
-    run(
-        [
-            "git",
-            "config",
-            "--local",
-            "gc.auto",
-            "0",
-        ],
-        check=True,
-    )
-    run(
-        [
-            "git",
-            "config",
-            "--local",
-            "core.looseCompression",
-            "0",
-        ],
-        check=True,
-    )
+# cli config
 
 
 @cli.command()
@@ -551,6 +588,38 @@ def install():
             f.write(f"{data}\n")
         f.write(f"{cdcattr}\n")
         f.write(f"{cdcignore}\n")
+
+
+@cli.command()
+def remove():
+    """Remove fastcdc from the current repository."""
+    do_remove()
+
+
+@cli.command()
+def useful_config():
+    """Set useful config on the repository. no auto gc and no loose compression."""
+
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "gc.auto",
+            "0",
+        ],
+        check=True,
+    )
+    run(
+        [
+            "git",
+            "config",
+            "--local",
+            "core.looseCompression",
+            "0",
+        ],
+        check=True,
+    )
 
 
 @cli.group()
@@ -619,38 +688,3 @@ def disable_ondisk():
             "fastcdc.ondisk",
         ],
     )
-
-
-def do_remove():
-    run(
-        [
-            "git",
-            "config",
-            "--local",
-            "--unset",
-            "filter.git_fastcdc.process",
-        ],
-    )
-    run(
-        [
-            "git",
-            "config",
-            "--local",
-            "--unset",
-            "filter.git_fastcdc.required",
-        ],
-    )
-    file = Path(".gitattributes")
-    file.touch()
-    with file.open("r", encoding="UTF-8") as f:
-        data = f.read()
-    with file.open("w", encoding="UTF-8") as f:
-        for line in data.splitlines():
-            if cdcattr not in line and cdcignore not in line:
-                f.write(f"{line}\n")
-
-
-@cli.command()
-def remove():
-    """Remove fastcdc from the current repository."""
-    do_remove()
