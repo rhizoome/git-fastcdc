@@ -412,10 +412,7 @@ def write_cdcs(cdcs, base_hints, no_progress=True):
         else:
             commit = git_commit_tree(hash, "-m", "cdc", "-p", commit)
 
-    if force:
-        git_branch(cdcbranch, commit, force=True)
-    else:
-        git_branch(cdcbranch, commit)
+    git_branch(cdcbranch, commit, force=force)
 
 
 @cli.command()
