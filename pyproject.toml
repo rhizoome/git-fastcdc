@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "git-fastcdc"
-version = "0.3.0"
+version = "0.4.0"
 description = "FastCDC for large git files"
 authors = ["Jean-Louis Fuchs <jean-louis.fuchs@adfinis.com>"]
 license = "AGPL-3.0-or-later"
@@ -10,7 +10,7 @@ readme = "README.md"
 git-fastcdc = 'git_fastcdc:cli'
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.9"
 fastcdc = "^1.5.0"
 click = "^8.1.7"
 tqdm = "^4.66.2"
