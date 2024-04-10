@@ -645,8 +645,8 @@ def enable_delta():
     )
 
 
-@delta.command()
-def disable_delta(name="disable"):
+@delta.command(name="disable")
+def disable_delta():
     """Disable delta-compression."""
     run(
         [
